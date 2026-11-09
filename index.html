@@ -708,7 +708,6 @@ function renderStats() {
     for (const c of (s.chapters || [])) m.chapters.set(c, (m.chapters.get(c) || 0) + 1);
     min.set(who, m);
   }
-  const services = new Set(sermons.map(s => `${s.sermon_date}_${s.service}`)).size;
   const hy = new Map();
   for (const h of hymns) {
     const k = `${h.hymnal}|${h.number}`;
@@ -735,7 +734,7 @@ function renderStats() {
   kids.push(el("div", { class: "toolbar", style: "margin-top:-6px" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn),
     el("span", { class: "hint" }, from ? `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}` : "")));
   if (view === "minister") {
-    kids.push(el("div", { class: "tiles" }, tile(services, "services"), tile(sermons.length, "sermons"), tile(minRows.filter(m => m.name !== "(not given)").length, "ministers")));
+    kids.push(el("div", { class: "tiles" }, tile(sermons.length, "sermons"), tile(minRows.filter(m => m.name !== "(not given)").length, "ministers")));
     const topMin = [...minRows].filter(m => m.name !== "(not given)").sort((a, b) => b.n - a.n).slice(0, 20);
     kids.push(el("div", { class: "grid2" },
       el("section", { class: "card" }, el("h2", {}, "Sermons per minister"),
