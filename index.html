@@ -815,6 +815,8 @@ function renderCopyright() {
     if (h.sung_date > e.last) e.last = h.sung_date; by.set(k, e);
   }
   const sum = [...by.values()];
+  for (const e of sum) e.total = 2 * e.av + e.a + e.v;   // to report: audio and video counts 2, audio only or video only 1
+  const tot = sum.reduce((t, e) => ({ total: t.total + e.total, av: t.av + e.av, a: t.a + e.a, v: t.v + e.v, n: t.n + e.n }), { total: 0, av: 0, a: 0, v: 0, n: 0 });
   const counted = (state.hymns || []).length;
   const kids = [];
   kids.push(el("section", { class: "card" }, el("h2", {}, "Report period"),
@@ -840,6 +842,9 @@ function renderCopyright() {
       render(); } }, "Save");
     return el("span", { class: "rightsedit" }, sel, ccli, note, save, el("button", { class: "small", onclick: () => { state.crEdit = null; render(); } }, "Cancel"));
   };
+  const unknownMedia = tot.n - tot.av - tot.a - tot.v;
+  kids.push(el("div", { class: "tiles" }, tile(tot.total, "total to report"), tile(`${tot.av} × 2`, "audio and video"), tile(tot.a, "audio only"), tile(tot.v, "video only")));
+  if (unknownMedia) kids.push(el("p", { class: "hint", style: "margin:-8px 0 12px" }, `${unknownMedia} time${unknownMedia === 1 ? "" : "s"} streamed as not known, not in the total.`));
   kids.push(el("section", { class: "card" }, el("h2", {}, `Hymns to report · ${sum.length} hymn${sum.length === 1 ? "" : "s"}, ${shown.length} time${shown.length === 1 ? "" : "s"} streamed`),
     state.crMsg ? el("div", { class: "msg " + (state.crMsg.ok ? "ok" : "bad"), style: "margin:0 0 8px" }, state.crMsg.text) : null,
     sum.length ? sortTable("crsum", [
@@ -847,6 +852,7 @@ function renderCopyright() {
       { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
       { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
       { key: "n", label: "Qty", val: r => r.n, num: true },
+      { key: "total", label: "Total", val: r => r.total, num: true },
       { key: "av", label: "Audio + video", val: r => r.av, num: true, cls: "opt-col" },
       { key: "a", label: "Audio only", val: r => r.a, num: true, cls: "opt-col" },
       { key: "v", label: "Video only", val: r => r.v, num: true, cls: "opt-col" },
@@ -854,8 +860,8 @@ function renderCopyright() {
       { key: "rights", label: "Copyright", val: r => (state.rights.get(r.key)?.status || "unknown"), cell: editCell },
     ], sum, { key: "n", dir: "desc" }, 200) : el("p", { class: "hint" }, "No hymns in this period."),
     sum.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`hymns-${from}-to-${to}.csv`,
-      ["Number", "Hymnal", "Title", "Qty", "Audio and video", "Audio only", "Video only", "CCLI song", "Copyright"],
-      [...sum].sort((a, b) => b.n - a.n || a._tie - b._tie).map(r => [r.number, r.hymnal, r.title, r.n, r.av, r.a, r.v, state.rights.get(r.key)?.ccli || "", RIGHTS_WORD[state.rights.get(r.key)?.status || "unknown"]])) }, "Download as a spreadsheet (CSV)") : null));
+      ["Number", "Hymnal", "Title", "Qty", "Total", "Audio and video", "Audio only", "Video only", "CCLI song", "Copyright"],
+      [...sum].sort((a, b) => b.n - a.n || a._tie - b._tie).map(r => [r.number, r.hymnal, r.title, r.n, r.total, r.av, r.a, r.v, state.rights.get(r.key)?.ccli || "", RIGHTS_WORD[state.rights.get(r.key)?.status || "unknown"]])) }, "Download as a spreadsheet (CSV)") : null));
 
   // every time a hymn was streamed
   kids.push(el("section", { class: "card" }, el("h2", {}, `Each time streamed · ${shown.length}`),
