@@ -12,7 +12,7 @@
     --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
     --grid: #e1e0d9; --border: rgba(11,11,11,0.10); --hover: rgba(11,11,11,0.04);
     --s1:#2a78d6; --s2:#eb6834; --band: rgba(42,120,214,0.10);
-    --s4:#eda100; --s5:#e87ba4; --s6:#008300;   /* hymnals: blue / gold / pink / green, checked together (all pairs, both modes) */
+    --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6;   /* hymnal colors (HYMNAL_COLORS) */
     --good:#0b8a0b; --warning:#b97c00; --critical:#c62f2f; --wait:#898781;
     --goodbg: rgba(12,163,12,.09); --warnbg: rgba(250,178,25,.14); --badbg: rgba(208,59,59,.09);
   }
@@ -22,7 +22,7 @@
       --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
       --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
       --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14);
-      --s4:#c98500; --s5:#d55181; --s6:#008300;
+      --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9;
       --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
       --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
     }
@@ -32,7 +32,7 @@
     --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
     --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
     --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14);
-    --s4:#c98500; --s5:#d55181; --s6:#008300;
+    --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9;
     --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
     --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
   }
@@ -161,6 +161,7 @@
   .bar .bl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
   .bar .bt { height: 16px; } .bar .bf { display:block; height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
   .bar .bv { font-variant-numeric: tabular-nums; font-weight: 650; text-align: right; }
+  .hy i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   .legend { display:flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px; } .legend i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   table.data td.nc, table.data th.nc { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   table.data td { vertical-align: middle; } table.data td.nowrap { white-space: nowrap; }
@@ -677,10 +678,14 @@ function bars(items, unit) {
       el("span", { class: "bt" }, el("span", { class: "bf", style: `width:${(i.value / max * 100).toFixed(1)}%;background:${i.color || "var(--s1)"}` })),
       el("span", { class: "bv" }, String(i.value)))));
 }
-// Hymnal colors (Most sung hymns). Fixed per hymnal so a hymnal keeps its color in every time frame; Tabernacle
-// numbers are stored under Hymns of Zion (combined numbering). Other hymnals are gray.
-const HYMNAL_COLORS = [["Zion's Harp", "var(--s1)"], ["Hymns of Zion", "var(--s4)"], ["Hymns of Christmas", "var(--s6)"], ["Hymns of Easter", "var(--s5)"]];
+// Hymnal colors (Stats > Most sung hymns, Copyright tables). Fixed per hymnal so a hymnal keeps its color
+// everywhere; Tabernacle numbers are stored under Hymns of Zion (combined numbering); other hymnals are gray.
+// The first four (the hymnals sung in services) pass the palette check on all pairs in both modes; the seven
+// together cannot (blue/violet are closest), so the hymnal's name is always written beside its color.
+const HYMNAL_COLORS = [["Zion's Harp", "var(--s1)"], ["Hymns of Zion", "var(--s4)"], ["Hymns of Christmas", "var(--s6)"], ["Hymns of Easter", "var(--s5)"],
+                       ["Hymns of Worship", "var(--s2)"], ["Gospel Hymns", "var(--s3)"], ["Children's Harp", "var(--s7)"]];
 const hymnalColor = (h) => (HYMNAL_COLORS.find(([name]) => name === (h === "Tabernacle Hymns" ? "Hymns of Zion" : h)) || [, "var(--muted)"])[1];
+const hymnalCell = (h) => h ? el("span", { class: "hy" }, el("i", { style: `background:${hymnalColor(h)}` }), h) : "";
 const tile = (n, label) => el("div", { class: "tile" }, el("b", {}, String(n)), el("span", {}, label));
 function downloadCsv(name, header, rows) {
   const q = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -774,7 +779,7 @@ function renderStats() {
       el("section", { class: "card" }, el("h2", {}, `Hymns · ${hyRows.length}`),
         sortTable("hymns", [
           { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
-          { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
+          { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => hymnalCell(r.hymnal), nowrap: true },
           { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
           { key: "n", label: "Sung", val: r => r.n, num: true },
           { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
@@ -877,7 +882,7 @@ function renderCopyright() {
     kids.push(el("section", { class: "card" }, el("h2", {}, `Copyrighted hymns · ${list.length}`),
       list.length ? sortTable("crall", [
         { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
-        { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true, cls: "opt-col" },   // phones: #, title, count
+        { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => hymnalCell(r.hymnal) },
         { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
         { key: "total", label: "Count", val: r => r.total, num: true, cell: r => r.total ? String(r.total) : el("span", { class: "hint" }, "0") },
         { key: "last", label: "Last streamed", val: r => r.last || "", cell: r => r.last ? fmtDate(dateOnly(r.last)) : el("span", { class: "hint" }, "not in this period"), nowrap: true, cls: "opt-col" },
@@ -915,7 +920,7 @@ function renderCopyright() {
     state.crMsg ? el("div", { class: "msg " + (state.crMsg.ok ? "ok" : "bad"), style: "margin:0 0 8px" }, state.crMsg.text) : null,
     sum.length ? sortTable("crsum", [
       { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
-      { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
+      { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => hymnalCell(r.hymnal), nowrap: true },
       { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
       { key: "n", label: "Times streamed", val: r => r.n, num: true, cls: "opt-col" },
       { key: "total", label: "Count", val: r => r.total, num: true },
@@ -933,7 +938,7 @@ function renderCopyright() {
       { key: "svc", label: "Service", val: r => r.service_name || r.service_id, cell: r => r.service_name || r.service_id, nowrap: true },
       { key: "time", label: "Time", val: r => String(r.sung_time || "").padStart(5, "0"), cell: r => r.sung_time || "", nowrap: true },
       { key: "num", label: "#", val: r => parseInt(r.number, 10) || 0, cell: r => r.number, num: true },
-      { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
+      { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => hymnalCell(r.hymnal), nowrap: true },
       { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
       { key: "count", label: "Count", val: r => streamCount(r), num: true, cell: r => streamCount(r) ? String(streamCount(r)) : el("span", { class: "hint" }, "not known") },
       { key: "rights", label: "Copyright", val: r => rightsOf(r).status, cell: r => el("span", { class: "chip " + rightsOf(r).status }, RIGHTS_WORD[rightsOf(r).status]) },
