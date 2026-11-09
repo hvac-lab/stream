@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morris North Stream</title>
+<link rel="icon" href="data:,">
+<style>
+  /* Same look as the HVAC page (hvac.morrisnorth.org) */
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --border: rgba(11,11,11,0.10); --hover: rgba(11,11,11,0.04);
+    --s1:#2a78d6; --s2:#eb6834; --band: rgba(42,120,214,0.10);
+    --good:#0b8a0b; --warning:#b97c00; --critical:#c62f2f; --wait:#898781;
+    --goodbg: rgba(12,163,12,.09); --warnbg: rgba(250,178,25,.14); --badbg: rgba(208,59,59,.09);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
+      --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14);
+      --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
+      --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
+    --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14);
+    --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
+    --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+  .spacer { flex: 1; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--border); color: var(--ink-2); }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .pill.ok .dot { background: var(--good); } .pill.warn .dot { background: var(--warning); } .pill.bad .dot { background: var(--critical); }
+  nav.tabs { display:flex; gap: 4px; padding: 8px 16px 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+  nav.tabs button { border: 1px solid transparent; border-bottom: none; background: none; border-radius: 10px 10px 0 0; padding: 8px 16px; font-size: 15px; color: var(--ink-2); }
+  nav.tabs button.on { background: var(--page); border-color: var(--border); color: var(--ink); font-weight: 650; margin-bottom: -1px; }
+  nav.tabs button .live { display:inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--s1); margin-left: 6px; vertical-align: middle; animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  button, input[type=text], select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
+  button { cursor: pointer; touch-action: manipulation; } button:hover { background: var(--hover); } button:disabled { opacity: .5; cursor: default; }
+  button.google { display:inline-flex; align-items:center; gap:10px; padding: 10px 18px; font-weight: 600; font-size: 16px; }
+  button.google svg { width: 20px; height: 20px; }
+  button.big { width: 100%; padding: 13px; font-size: 16px; font-weight: 600; border-radius: 12px; }
+  button.manual { border: 2px solid var(--warning); color: var(--warning); }
+  button.auto { border: 2px solid var(--good); color: var(--good); }
+  button.yes { background: var(--warning); border-color: transparent; color: #fff; }
+  button.primary { background: var(--s1); color: #fff; border-color: transparent; font-weight: 600; }
+  button.small { padding: 3px 10px; font-size: 13px; } button.danger { color: var(--critical); }
+  main { padding: 16px; max-width: 980px; margin: 0 auto; }
+  main.narrow { max-width: 760px; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; margin-bottom: 16px; }
+  .card > h2 { font-size: 13px; margin: 0 0 10px; color: var(--ink-2); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .card.test { border: 2px dashed var(--s1); }
+  .runhead { display:flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .runhead h3 { margin: 0; font-size: 20px; line-height: 1.2; } .runhead .when { color: var(--muted); font-size: 13px; }
+  .badge { display:inline-flex; align-items:center; gap:6px; font-size: 13px; font-weight: 650; padding: 4px 11px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--border); color: var(--ink-2); }
+  .badge.ok { color: var(--good); border-color: var(--good); background: var(--goodbg); }
+  .badge.warning { color: var(--warning); border-color: var(--warning); background: var(--warnbg); }
+  .badge.failed { color: var(--critical); border-color: var(--critical); background: var(--badbg); }
+  .badge.running { color: var(--s1); border-color: var(--s1); background: var(--band); }
+  .badge.skipped { color: var(--warning); border-color: var(--warning); }
+  .badge.small { font-size: 12px; padding: 2px 9px; }
+  ol.steps { list-style: none; margin: 14px 0 0; padding: 0; }
+  ol.steps li { display: grid; grid-template-columns: 34px 1fr; gap: 0 12px; padding: 10px 0; border-top: 1px solid var(--grid); }
+  ol.steps li:first-child { border-top: none; }
+  .num { width: 30px; height: 30px; border-radius: 50%; display:flex; align-items:center; justify-content:center; font-weight: 700; font-size: 14px;
+         border: 2px solid var(--wait); color: var(--wait); background: var(--surface); font-variant-numeric: tabular-nums; }
+  li.ok .num { background: var(--good); border-color: var(--good); color: #fff; }
+  li.warning .num { background: var(--warning); border-color: var(--warning); color: #fff; }
+  li.failed .num { background: var(--critical); border-color: var(--critical); color: #fff; }
+  li.running .num { border-color: var(--s1); color: var(--s1); animation: pulse 1.4s ease-in-out infinite; }
+  li.skipped .num { border-style: dashed; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 6px var(--band); } }
+  .stepline { display:flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .stepline b { font-weight: 650; }
+  .stat { font-size: 13px; font-weight: 650; white-space: nowrap; }
+  li.ok .stat { color: var(--good); } li.warning .stat { color: var(--warning); } li.failed .stat { color: var(--critical); }
+  li.running .stat { color: var(--s1); } li.pending .stat, li.skipped .stat { color: var(--muted); }
+  .detail { font-size: 14px; color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
+  li.failed .detail { color: var(--ink); background: var(--badbg); border-left: 3px solid var(--critical); padding: 6px 9px; border-radius: 6px; margin-top: 5px; }
+  li.failed .detail::before { content: "Why: "; font-weight: 650; color: var(--critical); }
+  li.warning .detail { border-left: 3px solid var(--warning); padding-left: 9px; }
+  li.pending .detail, li.skipped .detail { color: var(--muted); }
+  a { color: var(--s1); }
+  .banner { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--warning); background: var(--warnbg); font-size: 14px; }
+  .banner.info { border-color: var(--s1); background: var(--band); }
+  .ctl { margin-top: 14px; }
+  .confirm { margin-top: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 12px; background: var(--warnbg); font-size: 14px; }
+  .confirm p { margin: 0 0 10px; } .confirm .row { display:flex; gap: 8px; } .confirm .row button { flex: 1; padding: 11px; font-weight: 600; }
+  .confirm input[type=text] { width: 100%; margin-bottom: 10px; font-size: 16px; padding: 8px 10px; }
+  .msg { font-size: 14px; margin-top: 8px; } .msg.bad { color: var(--critical); } .msg.ok { color: var(--good); }
+  .next { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--grid); }
+  .next:first-of-type { border-top: none; }
+  .next .what b { display:block; } .next .what span { color: var(--muted); font-size: 13px; }
+  .next .mode { font-size: 13px; font-weight: 650; text-align: right; } .next .mode.auto { color: var(--good); } .next .mode.manual { color: var(--warning); }
+  .next .who { grid-column: 1 / -1; font-size: 13px; color: var(--warning); margin-top: -2px; }
+  .next button { grid-column: 1 / -1; } .next .confirm { grid-column: 1 / -1; margin-top: 0; }
+  /* History table: every heading sorts, a row opens to its steps and hymns */
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { font-size: 12px; color: var(--ink-2); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  th.sortable { cursor: pointer; user-select: none; } th.sortable:hover { color: var(--ink); text-decoration: underline; }
+  th[data-dir="asc"]::after { content: " \25B2"; font-size: 9px; } th[data-dir="desc"]::after { content: " \25BC"; font-size: 9px; }
+  table.hist tbody tr.row { cursor: pointer; } table.hist tbody tr.row:hover td { background: var(--hover); }
+  table.hist tr.row.open td { background: var(--band); border-bottom-color: transparent; }
+  table.hist td.date { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  table.hist td.date .tw { display:inline-block; width: 14px; color: var(--muted); }
+  table.hist td.res { white-space: nowrap; }
+  table.hist td.res small { display:block; color: var(--muted); font-size: 11px; margin-top: 3px; white-space: normal; }
+  table.hist .pf { display:inline-block; font-weight: 700; font-size: 12px; padding: 3px 10px; border-radius: 6px; color: #fff; letter-spacing: .03em; }
+  .pf.pass { background: var(--good); } .pf.fail { background: var(--critical); } .pf.run { background: var(--s1); } .pf.hand { background: var(--warning); }
+  table.hist td.readings { min-width: 150px; }
+  table.hist .svc-under { display: none; color: var(--ink-2); font-size: 12px; margin-left: 14px; }
+  table.hist tr.detailrow > td { background: var(--page); padding: 6px 12px 16px; }
+  .two { display:grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
+  .two h4 { margin: 10px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); }
+  table.hymns { font-size: 13px; } table.hymns td, table.hymns th { padding: 4px 6px; }
+  table.hymns td.n { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.hymns td.how { color: var(--muted); font-size: 12px; }
+  .facts { font-size: 14px; display:grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin-top: 6px; }
+  .facts dt { color: var(--muted); } .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .testform { display:grid; gap: 10px; }
+  .testform label.opt { display:flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+  .testform label.opt.on { border-color: var(--s1); background: var(--band); }
+  .testform label.opt input { margin-top: 4px; } .testform label.opt b { display:block; } .testform label.opt span { font-size: 13px; color: var(--ink-2); }
+  .testform select { width: 100%; font-size: 16px; padding: 10px; }
+  table.admin td.email { overflow-wrap: anywhere; } table.admin td.act { white-space: nowrap; }
+  .adminAdd { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top: 10px; }
+  .adminAdd input[type=text] { padding: 8px 10px; font-size: 16px; }
+  label.chk { display:inline-flex; align-items:center; gap:5px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
+  .center { max-width: 460px; margin: 10vh auto; text-align: center; } .center p { color: var(--ink-2); }
+  /* Stats and Copyright tabs */
+  .seg { display:inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 8px 14px; } .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--s1); color: #fff; font-weight: 650; }
+  .toolbar { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .toolbar label { font-size: 13px; color: var(--ink-2); display:inline-flex; gap: 6px; align-items: center; }
+  input[type=date] { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
+  .tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; }
+  .tile b { display:block; font-size: 28px; font-weight: 650; line-height: 1.1; font-variant-numeric: tabular-nums; } .tile span { font-size: 12px; color: var(--muted); }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; } .grid2 > .card { margin-bottom: 0; } .gridgap { height: 16px; }
+  .bars { display:grid; gap: 5px; }
+  .bar { display:grid; grid-template-columns: minmax(96px, 38%) 1fr 40px; align-items: center; gap: 8px; font-size: 13px; }
+  .bar .bl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+  .bar .bt { height: 16px; } .bar .bf { display:block; height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .bar .bv { font-variant-numeric: tabular-nums; font-weight: 650; text-align: right; }
+  .legend { display:flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px; } .legend i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  table.data td.nc, table.data th.nc { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.data td { vertical-align: middle; } table.data td.nowrap { white-space: nowrap; }
+  .more { margin-top: 8px; }
+  .chip { display:inline-block; font-size: 12px; font-weight: 650; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; color: var(--ink-2); }
+  .chip.copyrighted { color: var(--critical); border-color: var(--critical); background: var(--badbg); }
+  .chip.public_domain { color: var(--good); border-color: var(--good); background: var(--goodbg); }
+  .rightsedit { display:flex; gap: 6px; flex-wrap: wrap; align-items: center; } .rightsedit select, .rightsedit input { font-size: 14px; padding: 4px 6px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; gap: 4px; } .grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 600px) { header { padding: 8px 12px; gap: 8px; } header h1 { font-size: 16px; } main { padding: 10px; }
+    #who { display: none; } .pill { font-size: 11px; padding: 2px 8px; } header button { padding: 4px 8px; font-size: 13px; }
+    nav.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 8px 0; } nav.tabs::-webkit-scrollbar { display: none; }
+    nav.tabs button { white-space: nowrap; flex: 0 0 auto; padding: 7px 12px; font-size: 14px; }
+    .card { padding: 12px; border-radius: 14px; } .runhead h3 { font-size: 18px; }
+    table { font-size: 13px; } th, td { padding: 7px 5px; } table.hist .opt-col, table.hist .svc-col, table.data .opt-col { display: none; }
+    table.hist .svc-under { display: block; } table.hist td.date { white-space: normal; } table.hist td.readings { min-width: 0; }
+    table.hist td.res small { display: none; } table.hist .pf { padding: 3px 7px; }
+    table.admin { font-size: 12px; } table.admin .by { display: none; } table.admin td.act button { display: block; margin: 2px 0; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Morris North Stream</h1>
+  <span id="pc" class="pill" title="The church PC reports in every minute"><span class="dot"></span><span id="pcText">connecting</span></span>
+  <span class="spacer"></span>
+  <span id="who" class="hint"></span>
+  <button id="themeBtn" title="Light / dark">◐</button>
+  <button id="signout" style="display:none">Sign out</button>
+</header>
+<nav class="tabs" id="tabs" style="display:none"></nav>
+<main id="main"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+"use strict";
+// Status of the automatic Sunday / Wednesday stream at the church (Russ, 2026-11-09).
+//   Now      the service happening now (or the latest) as 12 numbered steps, what comes next, "Run by hand".
+//   History  every service: date, result (pass / fail), minister, readings; a row opens to its steps and hymns.
+//   Tests    an admin starts a TEST of a past service (quick replay or full re-check) and watches it run.
+//   Admin    who may sign in (admins only), the same way as on the HVAC page.
+// Data: Supabase (the HVAC page's project), tables stream_* (supabase\stream_status*.sql), written by the
+// church PC's scripts (Common.psm1 Set-MnStep). The page's own allow list is stream_allowed_users.
+
+const $ = (s, el = document) => el.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k === "style") n.style.cssText = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v);
+  }
+  for (const k of kids) if (k !== null && k !== undefined && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return n;
+};
+const params = new URLSearchParams(location.search);
+const demo = params.get("demo") === "1";
+const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+                set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
+const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["tests", "Tests"], ["admin", "Admin"]];
+const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
+                sermons: null, hymns: null, rights: new Map(), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
+                frame: store.get("frame", "2026"), cr: store.get("cr", { preset: "year", from: "", to: "", which: "copy" }), crEdit: null, crMsg: null,
+                runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
+                asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
+                testSource: null, testMode: "quick", testMsg: null };
+
+const STATUS_WORD = { ok: "Successful", warning: "Done, with a warning", failed: "Failed", running: "In progress", pending: "Waiting", skipped: "Skipped" };
+const DAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// ------------------------------------------------------------------ theme
+const applyTheme = () => { const t = store.get("theme", null); if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+$("#themeBtn").onclick = () => { const cur = store.get("theme", null); const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark = cur ? cur === "dark" : dark; store.set("theme", isDark ? "light" : "dark"); applyTheme(); };
+applyTheme();
+
+// ------------------------------------------------------------------ helpers
+const main = $("#main");
+// redraws keep the scroll position (the page refreshes itself and after each button)
+const screen = (...kids) => { const y = window.scrollY; main.replaceChildren(...kids.filter(k => k != null)); window.scrollTo(0, y); };
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseYmd = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
+const atTime = (day, hhmm) => { const [h, m] = hhmm.split(":").map(Number); const d = new Date(day); d.setHours(h, m, 0, 0); return d; };
+const fmtTime = (d) => d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+const fmtShortDay = (d) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); if (s < 90) return "just now"; const m = Math.round(s / 60); if (m < 90) return `${m} min ago`;
+  const h = Math.round(m / 60); return h < 36 ? `${h} h ago` : `${Math.round(h / 24)} days ago`; };
+function linkify(text) {
+  const out = document.createDocumentFragment(); let last = 0; const re = /https:\/\/vimeo\.com\/\d+\/[0-9a-z]+/gi; let m;
+  while ((m = re.exec(text))) { out.append(text.slice(last, m.index), el("a", { href: m[0], target: "_blank", rel: "noopener" }, m[0])); last = m.index + m[0].length; }
+  out.append(text.slice(last)); return out;
+}
+const serviceOf = (id) => (state.schedule?.services || []).find(s => s.id === id || "Test" + s.id === id) || null;
+const stepOf = (run, key) => (run.steps || []).find(s => s.key === key) || {};
+
+// The whole run in one word, from its steps.
+function overall(run) {
+  const st = (run.steps || []).map(s => s.status);
+  const has = (x) => st.includes(x);
+  if (has("skipped") && st.every(x => x === "skipped" || x === "pending")) return { cls: "skipped", text: "Run by hand" };
+  if (has("running")) return { cls: "running", text: "In progress" };
+  if (has("failed")) return { cls: "failed", text: "Failed" };
+  const started = st.some(x => x !== "pending");
+  const finished = stepOf(run, "report").status === "ok" || st.every(x => x !== "pending");
+  if (started && !finished) {
+    if (run.is_test) return { cls: "running", text: "In progress" };
+    const svc = serviceOf(run.service_id); const day = parseYmd(run.run_date);
+    const late = svc ? atTime(day, svc.cutoff).getTime() + 3 * 3600e3 : day.getTime() + 30 * 3600e3;
+    return Date.now() < late ? { cls: "running", text: "In progress" } : { cls: "warning", text: "Not finished" };
+  }
+  if (has("skipped")) return { cls: "skipped", text: "Partly by hand" };
+  if (has("warning")) return { cls: "warning", text: "Done, with warnings" };
+  return { cls: "ok", text: "Successful" };
+}
+// History: PASS = the sermon is on (Vimeo and AC Central done); FAIL = it is not, or a step failed on the way.
+function passFail(run) {
+  const o = overall(run);
+  if (o.cls === "running") return { cls: "run", text: "RUNNING", rank: 1 };
+  if (o.cls === "skipped") return { cls: "hand", text: "BY HAND", rank: 2 };
+  const on = stepOf(run, "vimeo").status === "ok" && stepOf(run, "accentral").status === "ok";
+  return on ? { cls: "pass", text: "PASS", rank: 3 } : { cls: "fail", text: "FAIL", rank: 0 };
+}
+function problems(run) {
+  const f = (run.steps || []).filter(s => s.status === "failed").map(s => s.label);
+  const w = (run.steps || []).filter(s => s.status === "warning").map(s => s.label);
+  const out = [];
+  if (f.length) out.push(`${f.length} failed: ${f.join(", ")}`);
+  if (w.length) out.push(`${w.length} warning${w.length > 1 ? "s" : ""}`);
+  return out.join("; ");
+}
+
+// Scheduled services in the next weeks (same rule as the PC: weekday, and weeks of the month when given).
+function upcoming(count = 5) {
+  const out = []; const now = new Date();
+  for (let i = 0; i < 45 && out.length < count; i++) {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    for (const s of (state.schedule?.services || [])) {
+      if (!s.enabled || !(s.days || []).includes(DAY[day.getDay()])) continue;
+      if (s.weeksOfMonth && !s.weeksOfMonth.includes(Math.floor((day.getDate() - 1) / 7) + 1)) continue;
+      const end = atTime(day, s.cutoff);
+      if (end < now) continue;
+      out.push({ key: `${ymd(day)}_${s.id}`, svc: s, day, start: atTime(day, s.start), end });
+    }
+  }
+  return out.sort((a, b) => a.start - b.start).slice(0, count);
+}
+const anyActive = () => [...state.runs, ...state.tests].some(r => overall(r).cls === "running") || state.requests.some(q => q.status === "pending" || q.status === "running");
+
+// ------------------------------------------------------------------ data
+async function load() {
+  if (demo) { await demoLoad(); return; }
+  const sb = state.sb;
+  const cols = "run_key,run_date,service_id,service_name,steps,summary,is_test,updated_at";
+  const [runs, tests, ctl, meta, req] = await Promise.all([
+    sb.from("stream_runs").select(cols).eq("is_test", false).order("run_date", { ascending: false }).order("run_key", { ascending: false }).limit(200),
+    sb.from("stream_runs").select(cols).eq("is_test", true).order("updated_at", { ascending: false }).limit(10),
+    sb.from("stream_control").select("run_key,note,set_by,set_at"),
+    sb.from("stream_meta").select("key,value"),
+    sb.from("stream_requests").select("*").order("id", { ascending: false }).limit(10),
+  ]);
+  for (const r of [runs, tests, ctl, meta, req]) if (r.error) throw new Error(r.error.message);
+  state.runs = runs.data || []; state.tests = tests.data || []; state.requests = req.data || [];
+  state.control = new Map((ctl.data || []).map(c => [c.run_key, c]));
+  const m = Object.fromEntries((meta.data || []).map(x => [x.key, x.value]));
+  state.schedule = m.schedule || null;
+  state.pcSeen = m.pc?.last_seen ? new Date(m.pc.last_seen) : null;
+}
+function setPc() {
+  const p = $("#pc"), t = $("#pcText");
+  if (!state.pcSeen) { p.className = "pill"; t.textContent = "church PC: not reporting yet"; return; }
+  const min = (Date.now() - state.pcSeen) / 60000;
+  p.className = "pill " + (min < 5 ? "ok" : min < 30 ? "warn" : "bad");
+  t.textContent = min < 5 ? "church PC online" : `church PC last seen ${ago(state.pcSeen)}`;
+}
+async function rpc(fn, args) {
+  if (demo) return demoRpc(fn, args);
+  const { data, error } = await state.sb.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// ------------------------------------------------------------------ shared pieces
+function stepList(run) {
+  const ol = el("ol", { class: "steps" });
+  (run.steps || []).forEach((s, i) => {
+    const at = s.at ? new Date(s.at) : null;
+    ol.append(el("li", { class: s.status },
+      el("div", { class: "num", "aria-hidden": "true" }, s.status === "ok" ? "✓" : s.status === "failed" ? "✕" : s.status === "warning" ? "!" : String(i + 1)),
+      el("div", {},
+        el("div", { class: "stepline" }, el("b", {}, `${i + 1}. ${s.label}`),
+          el("span", { class: "stat" }, (STATUS_WORD[s.status] || s.status) + (at && s.status !== "pending" ? ` · ${fmtTime(at)}` : ""))),
+        s.detail ? el("div", { class: "detail" }, linkify(s.detail)) : null)));
+  });
+  return ol;
+}
+function hymnTable(sum) {
+  const hymns = sum?.hymns || [];
+  if (!hymns.length) return el("p", { class: "hint" }, "No hymns found.");
+  const t = el("table", { class: "hymns" }, el("thead", {}, el("tr", {}, el("th", {}, "#"), el("th", {}, "Hymnal"), el("th", {}, "Title"), el("th", {}, "Time"))));
+  const b = el("tbody");
+  for (const h of hymns) b.append(el("tr", {}, el("td", { class: "n" }, h.number || "?"), el("td", {}, h.hymnal || ""),
+    el("td", {}, h.title || (h.number === "?" ? el("span", { class: "hint" }, "not announced") : ""), h.how ? el("div", { class: "how" }, h.how) : null), el("td", {}, h.time || "")));
+  t.append(b); return t;
+}
+function facts(run) {
+  const s = run.summary || {};
+  const dl = el("dl", { class: "facts" });
+  const add = (k, v) => { if (v) dl.append(el("dt", {}, k), el("dd", {}, v)); };
+  add("Minister", s.speaker || "not recognized");
+  if (s.speaker2) add("Also", s.speaker2);
+  add("Readings", (s.readings || []).join("; ") || "none found");
+  if (s.title) add("Title", s.title);
+  if (s.length) add("Video length", s.length);
+  if (s.video) add("Vimeo", el("a", { href: s.video, target: "_blank", rel: "noopener" }, s.video));
+  if (s.accentral) add("AC Central", s.accentral.replace(/^done \S+ \S+ - /, ""));
+  return dl;
+}
+// Full detail of one run: facts + hymns beside the 12 steps.
+function runDetail(run) {
+  return el("div", { class: "two" },
+    el("div", {}, el("h4", {}, "Steps"), stepList(run)),
+    el("div", {}, el("h4", {}, "Service"), facts(run), el("h4", {}, `Hymns (${(run.summary?.hymns || []).length})`), hymnTable(run.summary)));
+}
+
+// "Run by hand" / "Back to automatic" for one service run, with an inline confirmation.
+function manualControl(key, svc, inProgress) {
+  const box = el("div", { class: "ctl" });
+  const ctl = state.control.get(key);
+  if (ctl) {
+    box.append(el("div", { class: "banner" }, el("b", {}, "Runs by hand. "),
+      `Set by ${ctl.set_by} ${ago(new Date(ctl.set_at))}${ctl.note ? ` (${ctl.note})` : ""}. The church PC leaves this service alone.`));
+    box.append(el("button", { class: "big auto", style: "margin-top:10px", disabled: state.busy, onclick: () => setManual(key, false) }, "Back to automatic"));
+  } else if (state.asking === key) {
+    const note = el("input", { type: "text", placeholder: "Reason (optional), e.g. wedding, special program" });
+    const text = inProgress
+      ? `The stream keeps running and will NOT be stopped at ${svc ? fmtTime(atTime(new Date(), svc.cutoff)) : "the cutoff"}. Stop it yourself in OBS and Rocket Broadcaster. Nothing is trimmed, uploaded or entered on AC Central.`
+      : "The church PC will not start, check, stop, upload or enter this service. Start and stop OBS and Rocket Broadcaster yourself.";
+    box.append(el("div", { class: "confirm" }, el("p", {}, text), note,
+      el("div", { class: "row" },
+        el("button", { class: "yes", disabled: state.busy, onclick: () => setManual(key, true, note.value.trim()) }, "Yes, run it by hand"),
+        el("button", { onclick: () => { state.asking = null; render(); } }, "Cancel"))));
+  } else {
+    box.append(el("button", { class: "big manual", disabled: state.busy, onclick: () => { state.asking = key; state.msg = null; render(); } },
+      inProgress ? "Take over by hand (stop the automation)" : "Run this service by hand"));
+  }
+  if (state.msg && state.msg.key === key) box.append(el("div", { class: "msg " + (state.msg.ok ? "ok" : "bad") }, state.msg.text));
+  return box;
+}
+async function setManual(key, manual, note) {
+  state.busy = true; state.msg = null; render();
+  try {
+    await rpc("stream_set_manual", { p_run_key: key, p_manual: manual, p_note: note || null });
+    await load();
+    state.msg = { key, ok: true, text: manual ? "Set to run by hand. The church PC sees it at its next scheduled step." : "Back to automatic." };
+  } catch (e) { state.msg = { key, ok: false, text: "Could not change it: " + (e.message || e) }; }
+  state.busy = false; state.asking = null; render();
+}
+
+function runCard(run, title, opts = {}) {
+  const day = parseYmd(run.run_date);
+  const o = overall(run);
+  const svc = serviceOf(run.service_id);
+  const card = el("section", { class: "card" + (run.is_test ? " test" : "") }, el("h2", {}, title),
+    el("div", { class: "runhead" },
+      el("div", {}, el("h3", {}, run.service_name),
+        el("div", { class: "when" }, run.is_test ? `Test run on ${fmtDay(day)}` : fmtDay(day) + (svc ? ` · ${fmtTime(atTime(day, svc.start))} to ${fmtTime(atTime(day, svc.cutoff))}` : ""))),
+      el("span", { class: "badge " + o.cls }, o.text)),
+    opts.detail ? runDetail(run) : stepList(run));
+  if (!run.is_test) {
+    const stopStep = stepOf(run, "stop");
+    if (o.cls === "running" && stopStep.status === "pending" && run.service_id !== "Special") card.append(manualControl(run.run_key, svc, true));
+    else if (state.control.has(run.run_key)) card.append(manualControl(run.run_key, svc, false));
+  }
+  return card;
+}
+
+// ------------------------------------------------------------------ tabs
+function renderTabs() {
+  const nav = $("#tabs"); nav.style.display = ""; nav.replaceChildren();
+  if (!TABS.some(([k]) => k === state.tab) || (state.tab === "admin" && !state.admin)) state.tab = "now";
+  const testLive = state.tests.some(r => overall(r).cls === "running") || state.requests.some(q => q.status === "pending" || q.status === "running");
+  for (const [k, label] of TABS) {
+    if (k === "admin" && !state.admin) continue;
+    nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); window.scrollTo(0, 0);
+        if (["stats", "copyright"].includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
+      label, k === "tests" && testLive ? el("span", { class: "live", title: "a test is running" }) : null));
+  }
+}
+function render() {
+  setPc(); renderTabs();
+  main.className = ["history", "stats", "copyright"].includes(state.tab) ? "" : "narrow";
+  if (state.tab === "history") return renderHistory();
+  if (state.tab === "stats") return renderStats();
+  if (state.tab === "copyright") return renderCopyright();
+  if (state.tab === "tests") return renderTests();
+  if (state.tab === "admin") return renderAdmin();
+  return renderNow();
+}
+
+// ------------------------------------------------------------------ Now
+function renderNow() {
+  const kids = [];
+  const runs = state.runs;
+  const current = runs.find(r => overall(r).cls === "running") || runs[0];
+  if (current) kids.push(runCard(current, current.run_date === ymd(new Date()) && overall(current).cls === "running" ? "Now" : "Latest service"));
+  else kids.push(el("section", { class: "card" }, el("h2", {}, "Latest service"), el("p", { class: "hint" }, "No service has reported yet.")));
+  const liveTest = state.tests.find(r => overall(r).cls === "running");
+  if (liveTest) kids.unshift(el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, "A test is running: "), liveTest.service_name + ". ",
+    el("a", { href: "#", onclick: (e) => { e.preventDefault(); state.tab = "tests"; store.set("tab", "tests"); render(); } }, "Watch it on the Tests tab")));
+
+  const next = upcoming(5).filter(u => !runs.some(r => r.run_key === u.key && overall(r).cls === "running"));
+  const nc = el("section", { class: "card" }, el("h2", {}, "Coming up"));
+  if (!state.schedule) nc.append(el("p", { class: "hint" }, "The schedule appears after the church PC's next report."));
+  for (const u of next) {
+    const ctl = state.control.get(u.key);
+    const row = el("div", { class: "next" },
+      el("div", { class: "what" }, el("b", {}, `${u.svc.name} · ${fmtShortDay(u.day)}`), el("span", {}, `${fmtTime(u.start)} to ${fmtTime(u.end)}`)),
+      el("div", { class: "mode " + (ctl ? "manual" : "auto") }, ctl ? "By hand" : "Automatic"));
+    if (ctl) row.append(el("div", { class: "who" }, `Set by ${ctl.set_by} ${ago(new Date(ctl.set_at))}${ctl.note ? ` (${ctl.note})` : ""}`));
+    if (state.asking === u.key) {
+      const note = el("input", { type: "text", placeholder: "Reason (optional), e.g. wedding, special program" });
+      row.append(el("div", { class: "confirm" },
+        el("p", {}, `The church PC will not start, check, stop, upload or enter ${u.svc.name} on ${fmtShortDay(u.day)}. Start and stop OBS and Rocket Broadcaster yourself.`), note,
+        el("div", { class: "row" },
+          el("button", { class: "yes", disabled: state.busy, onclick: () => setManual(u.key, true, note.value.trim()) }, "Yes, run it by hand"),
+          el("button", { onclick: () => { state.asking = null; render(); } }, "Cancel"))));
+    } else if (ctl) row.append(el("button", { class: "auto", disabled: state.busy, onclick: () => setManual(u.key, false) }, "Back to automatic"));
+    else row.append(el("button", { class: "manual", disabled: state.busy, onclick: () => { state.asking = u.key; state.msg = null; render(); } }, "Run by hand"));
+    if (state.msg && state.msg.key === u.key) row.append(el("div", { class: "msg " + (state.msg.ok ? "ok" : "bad"), style: "grid-column:1/-1" }, state.msg.text));
+    nc.append(row);
+  }
+  kids.push(nc);
+  kids.push(el("p", { class: "hint", style: "text-align:center" }, `Updated ${fmtTime(new Date())} · refreshes by itself`));
+  screen(...kids);
+}
+
+// ------------------------------------------------------------------ History
+const HIST_COLS = [
+  { key: "date", label: "Date", val: r => r.run_key },
+  { key: "service", label: "Service", val: r => r.service_name, cls: "svc-col" },
+  { key: "result", label: "Result", val: r => passFail(r).rank },
+  { key: "speaker", label: "Minister", val: r => (r.summary?.speaker || "").toLowerCase() },
+  { key: "readings", label: "Bible readings", val: r => (r.summary?.readings || []).join("; ").toLowerCase() },
+  { key: "hymns", label: "Hymns", val: r => (r.summary?.hymns || []).length, opt: true },
+];
+function renderHistory() {
+  const runs = [...state.runs];
+  const col = HIST_COLS.find(c => c.key === state.sort.key) || HIST_COLS[0];
+  const dir = state.sort.dir === "asc" ? 1 : -1;
+  runs.sort((a, b) => { const x = col.val(a), y = col.val(b); return (x < y ? -1 : x > y ? 1 : 0) * dir || (a.run_key < b.run_key ? 1 : -1); });
+  const head = el("tr");
+  for (const c of HIST_COLS) {
+    head.append(el("th", { class: "sortable" + (c.opt ? " opt-col" : "") + (c.cls ? " " + c.cls : ""), "data-dir": c.key === col.key ? state.sort.dir : null, title: "Sort by " + c.label.toLowerCase(),
+      onclick: () => { state.sort = { key: c.key, dir: c.key === col.key && state.sort.dir === "desc" ? "asc" : "desc" }; if (c.key !== col.key && ["service", "speaker", "readings"].includes(c.key)) state.sort.dir = "asc"; store.set("sort", state.sort); render(); } }, c.label));
+  }
+  const body = el("tbody");
+  for (const r of runs) {
+    const open = state.openHist.has(r.run_key);
+    const pf = passFail(r); const pr = problems(r); const s = r.summary || {};
+    const tr = el("tr", { class: "row" + (open ? " open" : ""), title: open ? "Click to close" : "Click to see every step and the hymns",
+      onclick: () => { if (open) state.openHist.delete(r.run_key); else state.openHist.add(r.run_key); render(); } },
+      el("td", { class: "date" }, el("span", { class: "tw" }, open ? "▾" : "▸"), fmtDate(parseYmd(r.run_date)), el("span", { class: "svc-under" }, r.service_name)),
+      el("td", { class: "svc-col" }, r.service_name),
+      el("td", { class: "res" }, el("span", { class: "pf " + pf.cls }, pf.text), pr ? el("small", {}, pr) : null),
+      el("td", {}, s.speaker || el("span", { class: "hint" }, "—")),
+      el("td", { class: "readings" }, (s.readings || []).length ? (s.readings || []).join("; ") : el("span", { class: "hint" }, "—")),
+      el("td", { class: "opt-col" }, String((s.hymns || []).length)));
+    body.append(tr);
+    if (open) body.append(el("tr", { class: "detailrow" }, el("td", { colspan: String(HIST_COLS.length) }, runDetail(r))));
+  }
+  const card = el("section", { class: "card" }, el("h2", {}, `History · ${runs.length} service${runs.length === 1 ? "" : "s"}`),
+    runs.length ? el("div", { class: "tablewrap" }, el("table", { class: "hist" }, el("thead", {}, head), body))
+                : el("p", { class: "hint" }, "No services yet."),
+    el("p", { class: "hint", style: "margin:10px 0 0" }, "PASS = the sermon is on Vimeo and AC Central. Click a heading to sort, a row to see all steps and hymns."));
+  screen(card);
+}
+
+// ------------------------------------------------------------------ Tests
+function renderTests() {
+  const kids = [];
+  const live = state.requests.find(q => q.status === "pending" || q.status === "running");
+  const form = [];   // the start form goes below a running test, so a phone shows the test first
+  if (state.admin) {
+    const sources = state.runs.filter(r => (r.steps || []).some(s => s.status !== "pending"));
+    if (!state.testSource || !sources.some(r => r.run_key === state.testSource)) state.testSource = sources[0]?.run_key || null;
+    const sel = el("select", { onchange: (e) => { state.testSource = e.target.value; } },
+      ...sources.map(r => { const o = el("option", { value: r.run_key }, `${r.service_name}, ${fmtShortDay(parseYmd(r.run_date))}${r.summary?.speaker ? " · " + r.summary.speaker : ""}`); if (r.run_key === state.testSource) o.selected = true; return o; }));
+    const opt = (mode, title, text) => el("label", { class: "opt" + (state.testMode === mode ? " on" : "") },
+      el("input", { type: "radio", name: "mode", value: mode, checked: state.testMode === mode ? "checked" : null, onchange: () => { state.testMode = mode; render(); } }),
+      el("div", {}, el("b", {}, title), el("span", {}, text)));
+    const start = el("button", { class: "big primary", disabled: !!live || !sources.length || state.busy, onclick: async () => {
+      state.busy = true; state.testMsg = null; render();
+      try { await rpc("stream_request_test", { p_source_key: state.testSource, p_mode: state.testMode }); await load(); state.testMsg = { ok: true, text: "Asked. The church PC picks it up within a minute; watch it below." }; }
+      catch (e) { state.testMsg = { ok: false, text: "Could not start: " + (e.message || e) }; }
+      state.busy = false; render(); refresh();   // refresh() switches to the 5-second rhythm while the test waits or runs
+    } }, live ? "A test is already waiting or running" : "Start the test");
+    form.push(el("section", { class: "card" }, el("h2", {}, "Test a past service"),
+      el("div", { class: "testform" },
+        el("div", {}, el("div", { class: "hint", style: "margin-bottom:4px" }, "Service"), sel),
+        opt("quick", "Quick test · about 1 minute", "Replays that service step by step from its records, and judges its health check again with today's rules."),
+        opt("full", "Full test · about 25 minutes the first time, 2 after", "Runs the speaker, readings and hymns analysis again on the original recording, checks the Vimeo sign-in and finds the published video, fills the AC Central form without saving, and checks the Google Sheet connection."),
+        el("div", { class: "hint" }, "Nothing is published, uploaded, emailed or changed. A test waits while it is service time."),
+        start, state.testMsg ? el("div", { class: "msg " + (state.testMsg.ok ? "ok" : "bad") }, state.testMsg.text) : null)));
+  }
+  if (live) {
+    const src = state.runs.find(r => r.run_key === live.source_key);
+    const what = `${live.mode === "full" ? "Full" : "Quick"} test of ${src ? src.service_name + ", " + fmtShortDay(parseYmd(src.run_date)) : live.source_key}`;
+    const box = el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, live.status === "pending" ? "Waiting for the church PC: " : "Running: "), what,
+      ` (asked by ${live.requested_by} ${ago(new Date(live.requested_at))}). `, live.note ? live.note + " " : "",
+      live.status === "pending" && !live.note ? "The PC checks every minute. " : "");
+    if (live.status === "pending" && state.admin) box.append(el("button", { class: "small", onclick: async () => {
+      try { await rpc("stream_cancel_request", { p_id: live.id }); await load(); } catch (e) { state.testMsg = { ok: false, text: "Could not cancel: " + (e.message || e) }; } render(); } }, "Cancel"));
+    kids.push(box);
+  }
+  // the test of the request that is running (by its run key), else a test still marked running
+  const liveRun = (live && live.test_key && state.tests.find(t => t.run_key === live.test_key)) || state.tests.find(t => overall(t).cls === "running") || null;
+  if (liveRun) kids.push(runCard(liveRun, "Test running now", { detail: true }));
+  kids.push(...form);
+  const shown = state.tests.filter(t => t !== liveRun).slice(0, 3);
+  shown.forEach((t, i) => kids.push(runCard(t, i === 0 ? "Latest test" : "Earlier test", { detail: true })));
+  if (!shown.length && !liveRun) kids.push(el("section", { class: "card" }, el("h2", {}, "Tests"), el("p", { class: "hint" }, "No test has run yet.")));
+  const done = state.requests.filter(q => !["pending", "running"].includes(q.status)).slice(0, 6);
+  if (done.length) {
+    const t = el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Asked"), el("th", {}, "Test"), el("th", {}, "By"), el("th", {}, "Result"))));
+    const b = el("tbody");
+    for (const q of done) b.append(el("tr", {}, el("td", { class: "date" }, fmtShortDay(new Date(q.requested_at)) + " " + fmtTime(new Date(q.requested_at))),
+      el("td", {}, `${q.mode} · ${q.source_key}`), el("td", {}, q.requested_by), el("td", {}, `${q.status}${q.note ? ": " + q.note : ""}`)));
+    t.append(b); kids.push(el("section", { class: "card" }, el("h2", {}, "Test requests"), el("div", { class: "tablewrap" }, t)));
+  }
+  screen(...kids);
+}
+
+// ------------------------------------------------------------------ Stats and Copyright data
+// stream_sermons: every Morris North entry on AC Central since 2015 (minister, chapters); stream_hymns: every identified
+// hymn since 2026-10-18 with how it went out; stream_hymn_rights: copyright status set on the Copyright tab.
+// All copied by the church PC (scripts\Sync-StreamData.ps1) after each service and once a day.
+async function fetchAll(table, cols, order) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await state.sb.from(table).select(cols).order(order, { ascending: false }).range(from, from + 999);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+async function loadStats() {
+  if (demo) { await demoLoad(); state.statsAt = Date.now(); return; }
+  const [s, h, r] = await Promise.all([
+    fetchAll("stream_sermons", "id,sermon_date,service,speaker,chapters", "sermon_date"),
+    fetchAll("stream_hymns", "run_key,seq,sung_date,service_id,service_name,sung_time,number,hymnal,title,how,media", "sung_date"),
+    fetchAll("stream_hymn_rights", "hymnal,number,status,ccli,note,updated_by,updated_at", "updated_at"),
+  ]);
+  state.sermons = s; state.hymns = h; state.rights = new Map(r.map(x => [`${x.hymnal}|${x.number}`, x])); state.statsAt = Date.now();
+}
+// canonical order, for sorting chapters and telling Old from New Testament
+const BOOKS_NT = ["Matthew", "Mark", "Luke", "John", "Acts", "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians", "Philippians", "Colossians",
+  "1 Thessalonians", "2 Thessalonians", "1 Timothy", "2 Timothy", "Titus", "Philemon", "Hebrews", "James", "1 Peter", "2 Peter", "1 John", "2 John", "3 John", "Jude", "Revelation"];
+const BOOKS_OT = ["Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel", "1 Kings", "2 Kings", "1 Chronicles",
+  "2 Chronicles", "Ezra", "Nehemiah", "Esther", "Job", "Psalms", "Proverbs", "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel",
+  "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi"];
+const BOOK_ORDER = new Map([...BOOKS_OT, ...BOOKS_NT].map((b, i) => [b, i]));
+const bookOf = (ch) => ch.replace(/\s+\d+$/, "");
+const isNT = (book) => BOOKS_NT.includes(book);
+const chapterSortKey = (ch) => { const b = bookOf(ch); const n = parseInt(ch.slice(b.length), 10) || 0; return (BOOK_ORDER.has(b) ? BOOK_ORDER.get(b) : 99) * 1000 + n; };
+const SVC_WORD = { SunAM: "Sunday AM", SunPM: "Sunday PM", WedPM: "Wednesday" };
+const dateOnly = (s) => parseYmd(String(s).slice(0, 10));
+
+// The Stats time frame: this year, the past 12 months, or everything since 2015.
+const FRAMES = [["2026", `${new Date().getFullYear()}`], ["12m", "Past 12 months"], ["all", "All years"]];
+function inFrame(dateStr) {
+  const d = String(dateStr).slice(0, 10), today = ymd(new Date());
+  if (state.frame === "all") return d <= today;
+  if (state.frame === "12m") { const a = new Date(); a.setFullYear(a.getFullYear() - 1); return d > ymd(a) && d <= today; }
+  return d >= `${new Date().getFullYear()}-01-01` && d <= today;
+}
+
+// A table whose every heading sorts (numbers start high-to-low, words A-Z); long tables show 25 rows until "Show all".
+function sortTable(id, cols, rows, def, limit = 25) {
+  const st = state.sorts[id] || def;
+  const col = cols.find(c => c.key === st.key) || cols[0];
+  const dir = st.dir === "asc" ? 1 : -1;
+  const sorted = [...rows].sort((a, b) => { const x = col.val(a), y = col.val(b); return ((x < y ? -1 : x > y ? 1 : 0) * dir) || (a._tie || 0) - (b._tie || 0); });
+  const all = state.showAll.has(id);
+  const shown = all ? sorted : sorted.slice(0, limit);
+  const head = el("tr", {}, ...cols.map(c => el("th", { class: "sortable" + (c.num ? " nc" : "") + (c.cls ? " " + c.cls : ""), "data-dir": c.key === col.key ? st.dir : null,
+    title: "Sort by " + c.label.toLowerCase(),
+    onclick: () => { state.sorts[id] = { key: c.key, dir: c.key === col.key ? (st.dir === "desc" ? "asc" : "desc") : (c.num ? "desc" : "asc") }; store.set("sorts2", state.sorts); render(); } }, c.label)));
+  const body = el("tbody", {}, ...shown.map(r => el("tr", {}, ...cols.map(c => el("td", { class: [c.num ? "nc" : "", c.cls || "", c.nowrap ? "nowrap" : ""].join(" ").trim() || null }, c.cell ? c.cell(r) : String(c.val(r) ?? ""))))));
+  const box = el("div", {}, el("div", { class: "tablewrap" }, el("table", { class: "data" }, el("thead", {}, head), body)));
+  if (sorted.length > limit) box.append(el("button", { class: "small more", onclick: () => { if (all) state.showAll.delete(id); else state.showAll.add(id); render(); } },
+    all ? "Show fewer" : `Show all ${sorted.length}`));
+  return box;
+}
+// Horizontal bars: one hue per meaning, the value at the end of each bar, the whole item on hover.
+function bars(items, unit) {
+  const max = Math.max(1, ...items.map(i => i.value));
+  return el("div", { class: "bars", role: "img", "aria-label": items.map(i => `${i.label} ${i.value}`).join(", ") },
+    ...items.map(i => el("div", { class: "bar", title: `${i.label}: ${i.value} ${unit}` },
+      el("span", { class: "bl" }, i.label),
+      el("span", { class: "bt" }, el("span", { class: "bf", style: `width:${(i.value / max * 100).toFixed(1)}%;background:${i.color || "var(--s1)"}` })),
+      el("span", { class: "bv" }, String(i.value)))));
+}
+const tile = (n, label) => el("div", { class: "tile" }, el("b", {}, String(n)), el("span", {}, label));
+function downloadCsv(name, header, rows) {
+  const q = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const text = [header, ...rows].map(r => r.map(q).join(",")).join("\r\n");
+  const a = el("a", { href: URL.createObjectURL(new Blob(["\ufeff" + text], { type: "text/csv" })), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+const loadingCard = () => screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading…")));
+
+// ------------------------------------------------------------------ Stats
+function renderStats() {
+  if (!state.sermons) return loadingCard();
+  const sermons = state.sermons.filter(s => inFrame(s.sermon_date));
+  const hymns = (state.hymns || []).filter(h => inFrame(h.sung_date));
+  const frameBtns = el("div", { class: "seg" }, ...FRAMES.map(([k, label]) =>
+    el("button", { class: state.frame === k ? "on" : "", onclick: () => { state.frame = k; store.set("frame", k); render(); } }, label)));
+
+  // chapters (no verses), books, ministers
+  const ch = new Map(), books = new Map(), min = new Map();
+  for (const s of sermons) {
+    for (const c of (s.chapters || [])) {
+      const e = ch.get(c) || { chapter: c, book: bookOf(c), n: 0, last: "", by: new Map() };
+      e.n++; if (s.sermon_date > e.last) e.last = s.sermon_date; if (s.speaker) e.by.set(s.speaker, (e.by.get(s.speaker) || 0) + 1);
+      ch.set(c, e);
+      const b = bookOf(c); books.set(b, (books.get(b) || 0) + 1);
+    }
+    const who = s.speaker || "(not given)";
+    const m = min.get(who) || { name: who, n: 0, SunAM: 0, SunPM: 0, WedPM: 0, other: 0, last: "", chapters: new Map() };
+    m.n++; if (["SunAM", "SunPM", "WedPM"].includes(s.service)) m[s.service]++; else m.other++;
+    if (s.sermon_date > m.last) m.last = s.sermon_date;
+    for (const c of (s.chapters || [])) m.chapters.set(c, (m.chapters.get(c) || 0) + 1);
+    min.set(who, m);
+  }
+  const services = new Set(sermons.map(s => `${s.sermon_date}_${s.service}`)).size;
+  const hy = new Map();
+  for (const h of hymns) {
+    const k = `${h.hymnal}|${h.number}`;
+    const e = hy.get(k) || { key: k, number: h.number, hymnal: h.hymnal, title: h.title, n: 0, last: "" };
+    e.n++; if (h.sung_date > e.last) e.last = h.sung_date; hy.set(k, e);
+  }
+  const chRows = [...ch.values()].map(e => ({ ...e, _tie: chapterSortKey(e.chapter) }));
+  const minRows = [...min.values()];
+  const hyRows = [...hy.values()].map(e => ({ ...e, _tie: (parseInt(e.number, 10) || 0) }));
+  const firstHymn = (state.hymns || []).reduce((a, h) => !a || h.sung_date < a ? h.sung_date : a, "");
+
+  const kids = [];
+  kids.push(el("div", { class: "toolbar" }, el("b", {}, "Time frame"), frameBtns,
+    el("span", { class: "hint" }, `From AC Central's sermon list${state.frame === "all" && sermons.length ? ` (since ${fmtDate(dateOnly(sermons.reduce((a, s) => s.sermon_date < a ? s.sermon_date : a, sermons[0].sermon_date)))})` : ""}.`)));
+  kids.push(el("div", { class: "tiles" }, tile(services, "services"), tile(sermons.length, "sermons"), tile(minRows.filter(m => m.name !== "(not given)").length, "ministers"),
+    tile(chRows.length, "different chapters read"), tile(hymns.length, "hymns sung"), tile(hyRows.length, "different hymns")));
+
+  // Bible chapters
+  const topCh = [...chRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
+  const topBooks = [...books.entries()].map(([b, n]) => ({ b, n })).sort((a, b) => b.n - a.n || (BOOK_ORDER.get(a.b) ?? 99) - (BOOK_ORDER.get(b.b) ?? 99)).slice(0, 15);
+  const legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:var(--s1)" }), "Old Testament"), el("span", {}, el("i", { style: "background:var(--s2)" }), "New Testament"));
+  kids.push(el("div", { class: "grid2" },
+    el("section", { class: "card" }, el("h2", {}, "Most read chapters"), legend.cloneNode(true),
+      topCh.length ? bars(topCh.map(e => ({ label: e.chapter, value: e.n, color: isNT(e.book) ? "var(--s2)" : "var(--s1)" })), "times") : el("p", { class: "hint" }, "No readings in this time frame.")),
+    el("section", { class: "card" }, el("h2", {}, "Readings by book"), legend,
+      topBooks.length ? bars(topBooks.map(e => ({ label: e.b, value: e.n, color: isNT(e.b) ? "var(--s2)" : "var(--s1)" })), "chapters read") : el("p", { class: "hint" }, "No readings in this time frame."))));
+  kids.push(el("div", { class: "gridgap" }));
+  kids.push(el("section", { class: "card" }, el("h2", {}, `Bible chapters read · ${chRows.length}`),
+    sortTable("chapters", [
+      { key: "chapter", label: "Chapter", val: r => r._tie, cell: r => r.chapter, nowrap: true },
+      { key: "t", label: "Testament", val: r => isNT(r.book) ? "New" : "Old" },
+      { key: "n", label: "Times read", val: r => r.n, num: true },
+      { key: "last", label: "Last read", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
+      { key: "by", label: "Read by", val: r => [...r.by.keys()].join(", ").toLowerCase(), cell: r => [...r.by.entries()].sort((a, b) => b[1] - a[1]).map(([w, n]) => n > 1 ? `${w} (${n})` : w).join(", ") },
+    ], chRows, { key: "n", dir: "desc" })));
+
+  // ministers
+  const topMin = [...minRows].filter(m => m.name !== "(not given)").sort((a, b) => b.n - a.n).slice(0, 20);
+  kids.push(el("div", { class: "grid2" },
+    el("section", { class: "card" }, el("h2", {}, "Sermons per minister"),
+      topMin.length ? bars(topMin.map(m => ({ label: m.name, value: m.n })), "sermons") : el("p", { class: "hint" }, "No sermons in this time frame.")),
+    el("section", { class: "card" }, el("h2", {}, `Ministers · ${minRows.length}`),
+      sortTable("ministers", [
+        { key: "name", label: "Minister", val: r => r.name.toLowerCase(), cell: r => r.name },
+        { key: "n", label: "Sermons", val: r => r.n, num: true },
+        { key: "am", label: "Sun AM", val: r => r.SunAM, num: true },
+        { key: "pm", label: "Sun PM", val: r => r.SunPM, num: true },
+        { key: "wed", label: "Wed", val: r => r.WedPM, num: true },
+        { key: "other", label: "Other", val: r => r.other, num: true },
+        { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
+      ], minRows, { key: "n", dir: "desc" }, 30))));
+  kids.push(el("div", { class: "gridgap" }));
+
+  // hymns
+  const topHy = [...hyRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
+  kids.push(el("div", { class: "grid2" },
+    el("section", { class: "card" }, el("h2", {}, "Most sung hymns"),
+      topHy.length ? bars(topHy.map(h => ({ label: `${h.number} ${h.title || ""}`.trim(), value: h.n })), "times") : el("p", { class: "hint" }, "No hymns in this time frame.")),
+    el("section", { class: "card" }, el("h2", {}, `Hymns · ${hyRows.length}`),
+      sortTable("hymns", [
+        { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
+        { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
+        { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
+        { key: "n", label: "Sung", val: r => r.n, num: true },
+        { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
+      ], hyRows, { key: "n", dir: "desc" }))));
+  kids.push(el("p", { class: "hint", style: "text-align:center" },
+    `Hymns are known from the automatic analysis${firstHymn ? `, since ${fmtDate(dateOnly(firstHymn))}` : ""}; singing nobody announced is not counted. Data copied ${state.statsAt ? fmtTime(new Date(state.statsAt)) : ""}.`));
+  screen(...kids);
+}
+
+// ------------------------------------------------------------------ Copyright
+const RIGHTS_WORD = { copyrighted: "Copyrighted", public_domain: "Public domain", unknown: "Unknown" };
+function crRange() {
+  const t = new Date(), y = t.getFullYear(), m = t.getMonth();
+  const p = state.cr.preset;
+  if (p === "custom") return { from: state.cr.from || `${y}-01-01`, to: state.cr.to || ymd(t) };
+  if (p === "month") return { from: ymd(new Date(y, m, 1)), to: ymd(t) };
+  if (p === "lastmonth") return { from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) };
+  if (p === "12m") { const a = new Date(t); a.setFullYear(y - 1); a.setDate(a.getDate() + 1); return { from: ymd(a), to: ymd(t) }; }
+  if (p === "all") return { from: "2000-01-01", to: ymd(t) };
+  return { from: `${y}-01-01`, to: ymd(t) };
+}
+function rightsOf(h) { return state.rights.get(`${h.hymnal}|${h.number}`) || { status: "unknown" }; }
+function renderCopyright() {
+  if (!state.sermons) return loadingCard();
+  const { from, to } = crRange();
+  const setCr = (patch) => { state.cr = { ...state.cr, ...patch }; store.set("cr", state.cr); state.crEdit = null; render(); };
+  const presets = [["month", "This month"], ["lastmonth", "Last month"], ["year", "This year"], ["12m", "Past 12 months"], ["all", "All"]];
+  const fromIn = el("input", { type: "date", value: from, onchange: (e) => setCr({ preset: "custom", from: e.target.value, to }) });
+  const toIn = el("input", { type: "date", value: to, onchange: (e) => setCr({ preset: "custom", from, to: e.target.value }) });
+  const which = el("select", { onchange: (e) => setCr({ which: e.target.value }) },
+    ...[["copy", "Copyrighted and not yet known"], ["only", "Copyrighted only"], ["all", "All hymns"]].map(([v, t]) => { const o = el("option", { value: v }, t); if (state.cr.which === v) o.selected = true; return o; }));
+  const rows = (state.hymns || []).filter(h => { const d = String(h.sung_date).slice(0, 10); return d >= from && d <= to; });
+  const keep = (h) => { const s = rightsOf(h).status; return state.cr.which === "all" || (state.cr.which === "only" ? s === "copyrighted" : s !== "public_domain"); };
+  const shown = rows.filter(keep);
+  const by = new Map();
+  for (const h of shown) {
+    const k = `${h.hymnal}|${h.number}`;
+    const e = by.get(k) || { key: k, number: h.number, hymnal: h.hymnal, title: h.title, n: 0, av: 0, a: 0, v: 0, last: "", _tie: parseInt(h.number, 10) || 0 };
+    e.n++; if (h.media === "Audio and video") e.av++; else if (h.media === "Audio") e.a++; else if (h.media === "Video") e.v++;
+    if (h.sung_date > e.last) e.last = h.sung_date; by.set(k, e);
+  }
+  const sum = [...by.values()];
+  const counted = (state.hymns || []).length;
+  const kids = [];
+  kids.push(el("section", { class: "card" }, el("h2", {}, "Report period"),
+    el("div", { class: "toolbar", style: "margin-bottom:8px" }, el("div", { class: "seg" }, ...presets.map(([k, label]) => el("button", { class: state.cr.preset === k ? "on" : "", onclick: () => setCr({ preset: k }) }, label)))),
+    el("div", { class: "toolbar", style: "margin:0" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn), el("label", {}, "Show", which)),
+    el("p", { class: "hint", style: "margin:8px 0 0" }, `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}: ${rows.length} hymn${rows.length === 1 ? "" : "s"} streamed, ${shown.length} shown. `,
+      "The hymn data carries no copyright information: mark each hymn once with Edit (admins) and it is remembered for every report.")));
+
+  // the summary to report: hymn and quantity
+  const editCell = (r) => {
+    const cur = state.rights.get(r.key) || { status: "unknown" };
+    if (state.crEdit !== r.key) {
+      return el("span", {}, el("span", { class: "chip " + cur.status }, RIGHTS_WORD[cur.status]), cur.note ? el("span", { class: "hint" }, " " + cur.note) : null,
+        state.admin ? el("button", { class: "small", style: "margin-left:6px", onclick: () => { state.crEdit = r.key; state.crMsg = null; render(); } }, "Edit") : null);
+    }
+    const sel = el("select", {}, ...Object.entries(RIGHTS_WORD).map(([v, t]) => { const o = el("option", { value: v }, t); if (cur.status === v) o.selected = true; return o; }));
+    const ccli = el("input", { type: "text", value: cur.ccli || "", placeholder: "CCLI song #", style: "width:110px" });
+    const note = el("input", { type: "text", value: cur.note || "", placeholder: "note (e.g. author, year)", style: "width:170px" });
+    const save = el("button", { class: "small primary", onclick: async () => { save.disabled = true;
+      try { await rpc("stream_set_hymn_rights", { p_hymnal: r.hymnal || "", p_number: r.number, p_status: sel.value, p_ccli: ccli.value.trim() || null, p_note: note.value.trim() || null });
+        state.rights.set(r.key, { hymnal: r.hymnal, number: r.number, status: sel.value, ccli: ccli.value.trim(), note: note.value.trim() }); state.crEdit = null; state.crMsg = { ok: true, text: `${r.number} ${r.title}: saved.` }; }
+      catch (e) { state.crMsg = { ok: false, text: "Could not save: " + (e.message || e) }; }
+      render(); } }, "Save");
+    return el("span", { class: "rightsedit" }, sel, ccli, note, save, el("button", { class: "small", onclick: () => { state.crEdit = null; render(); } }, "Cancel"));
+  };
+  kids.push(el("section", { class: "card" }, el("h2", {}, `Hymns to report · ${sum.length} hymn${sum.length === 1 ? "" : "s"}, ${shown.length} time${shown.length === 1 ? "" : "s"} streamed`),
+    state.crMsg ? el("div", { class: "msg " + (state.crMsg.ok ? "ok" : "bad"), style: "margin:0 0 8px" }, state.crMsg.text) : null,
+    sum.length ? sortTable("crsum", [
+      { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
+      { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
+      { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
+      { key: "n", label: "Qty", val: r => r.n, num: true },
+      { key: "av", label: "Audio + video", val: r => r.av, num: true, cls: "opt-col" },
+      { key: "a", label: "Audio only", val: r => r.a, num: true, cls: "opt-col" },
+      { key: "v", label: "Video only", val: r => r.v, num: true, cls: "opt-col" },
+      { key: "ccli", label: "CCLI #", val: r => (state.rights.get(r.key)?.ccli || ""), nowrap: true, cls: "opt-col" },
+      { key: "rights", label: "Copyright", val: r => (state.rights.get(r.key)?.status || "unknown"), cell: editCell },
+    ], sum, { key: "n", dir: "desc" }, 200) : el("p", { class: "hint" }, "No hymns in this period."),
+    sum.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`hymns-${from}-to-${to}.csv`,
+      ["Number", "Hymnal", "Title", "Qty", "Audio and video", "Audio only", "Video only", "CCLI song", "Copyright"],
+      [...sum].sort((a, b) => b.n - a.n || a._tie - b._tie).map(r => [r.number, r.hymnal, r.title, r.n, r.av, r.a, r.v, state.rights.get(r.key)?.ccli || "", RIGHTS_WORD[state.rights.get(r.key)?.status || "unknown"]])) }, "Download as a spreadsheet (CSV)") : null));
+
+  // every time a hymn was streamed
+  kids.push(el("section", { class: "card" }, el("h2", {}, `Each time streamed · ${shown.length}`),
+    shown.length ? sortTable("crlist", [
+      { key: "date", label: "Date", val: r => `${r.sung_date}_${String(r.sung_time || "").padStart(5, "0")}`, cell: r => fmtDate(dateOnly(r.sung_date)), nowrap: true },
+      { key: "svc", label: "Service", val: r => r.service_name || r.service_id, cell: r => r.service_name || r.service_id, nowrap: true },
+      { key: "time", label: "Time", val: r => String(r.sung_time || "").padStart(5, "0"), cell: r => r.sung_time || "", nowrap: true },
+      { key: "num", label: "#", val: r => parseInt(r.number, 10) || 0, cell: r => r.number, num: true },
+      { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
+      { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
+      { key: "media", label: "Streamed as", val: r => r.media || "", cell: r => r.media || "not known", nowrap: true },
+      { key: "rights", label: "Copyright", val: r => rightsOf(r).status, cell: r => el("span", { class: "chip " + rightsOf(r).status }, RIGHTS_WORD[rightsOf(r).status]) },
+    ], shown, { key: "date", dir: "desc" }, 200) : el("p", { class: "hint" }, "Nothing streamed in this period."),
+    shown.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`hymns-streamed-${from}-to-${to}.csv`,
+      ["Date", "Service", "Time", "Number", "Hymnal", "Title", "Streamed as", "Copyright"],
+      [...shown].sort((a, b) => (a.sung_date + a.sung_time) < (b.sung_date + b.sung_time) ? -1 : 1).map(r => [String(r.sung_date).slice(0, 10), r.service_name || r.service_id, r.sung_time, r.number, r.hymnal, r.title, r.media, RIGHTS_WORD[rightsOf(r).status]])) }, "Download as a spreadsheet (CSV)") : null,
+    el("p", { class: "hint", style: "margin:10px 0 0" }, `Streamed as: video = the OBS stream to AC Central (Vimeo), audio = the Rocket Broadcaster stream; taken from the recordings of each service. `,
+      `Singing nobody announced has no hymn number and is not listed. ${counted} hymns are known in all.`)));
+  screen(...kids);
+}
+
+// ------------------------------------------------------------------ Admin (same as the HVAC page's Admin tab)
+async function loadUsers() {
+  if (demo) return state.users;
+  const { data, error } = await state.sb.from("stream_allowed_users").select("email,note,is_admin,added_at,added_by").order("added_at");
+  if (error) throw new Error(error.message);
+  state.users = data || []; return state.users;
+}
+function renderAdmin() {
+  screen(el("section", { class: "card", id: "adminList" }, el("h2", {}, "Who may sign in"), "Loading…"));
+  refreshAdmin();
+}
+async function refreshAdmin(note) {
+  const box = $("#adminList"); if (!box) return;
+  const me = String(state.user?.email || "").toLowerCase();
+  try {
+    const rows = await loadUsers();
+    box.replaceChildren(el("h2", {}, `Who may sign in · ${rows.length}`));
+    const t = el("table", { class: "admin" }, el("thead", {}, el("tr", {}, el("th", {}, "Email"), el("th", {}, "Name / note"), el("th", {}, "Admin"), el("th", {}, "Added"), el("th", { class: "by" }, "By"), el("th", {}, ""))));
+    const b = el("tbody");
+    for (const u of rows) {
+      const self = u.email.toLowerCase() === me;
+      const rm = el("button", { class: "small danger", title: self ? "You cannot remove yourself" : "Remove " + u.email }, "Remove");
+      if (self) rm.disabled = true;
+      const edit = el("button", { class: "small", title: "Change the name or the admin flag" }, "Edit");
+      const noteCell = el("td", {}, u.note || "");
+      const admCell = el("td", {}, u.is_admin ? el("span", { class: "badge ok small" }, "admin") : "");
+      const cell = el("td", { class: "act" }, edit, " ", rm);
+      const restore = () => cell.replaceChildren(edit, " ", rm);
+      rm.onclick = () => {
+        const yes = el("button", { class: "small danger", onclick: async () => { yes.disabled = true;
+          try { await rpc("stream_admin_remove_user", { p_email: u.email }); refreshAdmin(`${u.email} removed.`); }
+          catch (e) { refreshAdmin("Could not remove: " + (e.message || e)); } } }, "Really remove?");
+        cell.replaceChildren(yes, " ", el("button", { class: "small", onclick: restore }, "Cancel"));
+      };
+      edit.onclick = () => {
+        const nameIn = el("input", { type: "text", value: u.note || "", placeholder: "name", style: "width:140px;max-width:100%;padding:4px 6px" });
+        const admIn = el("input", { type: "checkbox", title: self ? "You cannot take admin away from yourself" : "" }); admIn.checked = !!u.is_admin; if (self) admIn.disabled = true;
+        const save = el("button", { class: "small primary", onclick: async () => { save.disabled = true;
+          try { await rpc("stream_admin_add_user", { p_email: u.email, p_note: nameIn.value.trim() || null, p_admin: admIn.checked }); refreshAdmin(`${u.email} updated.`); }
+          catch (e) { refreshAdmin("Could not save: " + (e.message || e)); } } }, "Save");
+        const cancel = el("button", { class: "small", onclick: () => refreshAdmin() }, "Cancel");
+        nameIn.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); if (e.key === "Escape") cancel.click(); });
+        noteCell.replaceChildren(nameIn); admCell.replaceChildren(el("label", {}, admIn, " admin"));
+        cell.replaceChildren(save, " ", cancel); nameIn.focus();
+      };
+      b.append(el("tr", {}, el("td", { class: "email" }, u.email, self ? el("span", { class: "hint" }, " (you)") : null), noteCell, admCell,
+        el("td", {}, u.added_at ? fmtShortDay(new Date(u.added_at)) : ""), el("td", { class: "email by" }, u.added_by || ""), cell));
+    }
+    t.append(b); box.append(el("div", { class: "tablewrap" }, t));
+    const email = el("input", { type: "text", placeholder: "email address", autocomplete: "off", style: "width:260px;max-width:100%" });
+    const name = el("input", { type: "text", placeholder: "name (optional)", autocomplete: "off", style: "width:160px;max-width:100%" });
+    const adm = el("input", { type: "checkbox" });
+    const msg = el("span", { class: "hint" }, note || "");
+    const add = el("button", { class: "primary", onclick: async () => {
+      const addr = email.value.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { msg.textContent = "That does not look like an email address."; return; }
+      add.disabled = true; msg.textContent = "Adding…";
+      try { await rpc("stream_admin_add_user", { p_email: addr, p_note: name.value.trim() || null, p_admin: adm.checked }); refreshAdmin(`${addr} added.`); }
+      catch (e) { add.disabled = false; msg.textContent = "Could not add: " + (e.message || e); }
+    } }, "Add");
+    email.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); });
+    box.append(el("div", { class: "adminAdd" }, email, name, el("label", { class: "chk" }, adm, " admin"), add, msg),
+      el("p", { class: "hint", style: "margin:8px 0 0" }, "Use the address of the person's Google account. Everyone on the list sees the status and may switch a service to run by hand; ",
+        "admins also start tests and manage this list. This list is separate from the HVAC page's list."));
+  } catch (e) { box.replaceChildren(el("b", {}, "Could not load the list: "), String(e.message || e)); }
+}
+
+// ------------------------------------------------------------------ refresh loop: every 5 s while something runs, else 20 s
+async function refresh() {
+  clearTimeout(state.timer);
+  try {
+    await load();
+    const statsTab = ["stats", "copyright"].includes(state.tab);
+    if (statsTab && (!state.sermons || Date.now() - state.statsAt > 10 * 60e3)) { await loadStats(); if (state.crEdit === null) render(); }
+    // do not redraw under an open confirmation, a form being filled in, the admin list or the stats being looked at
+    if (!state.asking && state.tab !== "admin" && !statsTab && !(document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName))) render();
+    else { setPc(); renderTabs(); }
+  } catch (e) { screen(el("section", { class: "card" }, "Could not load the status: " + (e.message || e))); }
+  state.timer = setTimeout(refresh, anyActive() ? 5000 : 20000);
+}
+
+// ------------------------------------------------------------------ sign-in (same as the HVAC page)
+const GOOGLE_G = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 48 48");
+  s.innerHTML = '<path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.5 2.9-2.2 5.4-4.7 7.1l7.6 5.9c4.4-4.1 6.9-10.1 6.9-17z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.5-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C1 16.5 0 20.1 0 24s1 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.3 0 11.7-2.1 15.6-5.7l-7.6-5.9c-2.1 1.4-4.8 2.3-8 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/>';
+  return s; };
+function showLogin(note) {
+  $("#tabs").style.display = "none";
+  const msg = el("p", { class: "hint" }, note || "");
+  const gbtn = el("button", { class: "google", onclick: async () => {
+    gbtn.disabled = true; msg.textContent = "Opening Google…";
+    const { error } = await state.sb.auth.signInWithOAuth({ provider: "google",
+      options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: "select_account" } } });
+    if (error) { gbtn.disabled = false; msg.textContent = "Google sign-in failed: " + error.message; }
+  } }, GOOGLE_G(), "Sign in with Google");
+  const email = el("input", { type: "text", placeholder: "your email address", style: "width:100%;max-width:320px;padding:10px 12px;font-size:16px", autocomplete: "email" });
+  const btn = el("button", { onclick: async () => {
+    const addr = email.value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { msg.textContent = "That does not look like an email address."; return; }
+    btn.disabled = true; msg.textContent = "Sending…";
+    const { error } = await state.sb.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true } });
+    btn.disabled = false;
+    msg.textContent = error ? "Could not send: " + error.message : `Check ${addr} for a sign-in message and click its link.`;
+  } }, "Email me a sign-in link");
+  screen(el("div", { class: "center" }, el("h2", {}, "Morris North Stream"),
+    el("p", {}, "Live status of the automatic service stream, recording and upload."),
+    el("p", {}, gbtn), msg,
+    el("p", { class: "hint" }, "Only people on the list can see anything. Ask Russ to be added."),
+    el("details", { style: "margin-top:24px" }, el("summary", { class: "hint", style: "cursor:pointer" }, "Other ways to sign in"),
+      el("p", {}, email), el("p", {}, btn))));
+  $("#pc").className = "pill"; $("#pcText").textContent = "signed out";
+}
+function showNotAllowed(email) {
+  $("#tabs").style.display = "none";
+  screen(el("div", { class: "center" }, el("h2", {}, "Not on the list"),
+    el("p", {}, `${email} is signed in but not allowed to view this page. Ask Russ to add it.`),
+    el("button", { onclick: () => state.sb.auth.signOut() }, "Sign out")));
+}
+
+// ------------------------------------------------------------------ demo (?demo=1 sample data; ?demo=1&data=snapshot.json a local copy of the real tables)
+async function demoLoad() {
+  if (state.runs.length || state.tests.length) { if (state.demoTick) state.demoTick(); return; }
+  if (params.get("data")) {
+    const s = await (await fetch(params.get("data"), { cache: "no-store" })).json();
+    const all = s.runs || [];
+    state.runs = all.filter(r => !r.is_test); state.tests = all.filter(r => r.is_test); state.requests = s.requests || [];
+    state.schedule = s.schedule || null; state.users = s.users || []; state.pcSeen = new Date(Date.now() - 30e3);
+    state.sermons = s.sermons || []; state.hymns = s.hymns || []; state.rights = new Map((s.rights || []).map(x => [`${x.hymnal}|${x.number}`, x]));
+    state.control = new Map((s.control || []).map(c => [c.run_key, c]));
+    if (params.get("live") === "1") state.demoTick = async () => { try { const s2 = await (await fetch(params.get("data"), { cache: "no-store" })).json();
+      const a2 = s2.runs || []; state.runs = a2.filter(r => !r.is_test); state.tests = a2.filter(r => r.is_test); state.requests = s2.requests || []; } catch {} };
+    return;
+  }
+  const today = new Date(); const t = (h, m) => { const d = new Date(today); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const S = (key, label, status, detail, at) => ({ key, label, status, detail, at });
+  state.schedule = { services: [
+    { id: "SunAM", name: "Sunday AM", days: ["Sunday"], weeksOfMonth: null, start: "09:57", check: "10:03", cutoff: "11:40", enabled: true },
+    { id: "SunPM", name: "Sunday PM", days: ["Sunday"], weeksOfMonth: null, start: "12:12", check: "12:18", cutoff: "14:00", enabled: true },
+    { id: "WedPM", name: "Wednesday Evening", days: ["Wednesday"], weeksOfMonth: [1, 3], start: "19:12", check: "19:18", cutoff: "20:45", enabled: true } ] };
+  const allOk = (d) => [
+    S("start", "Automatic start", "ok", "Started by the schedule at 9:57 AM; camera, Sanctuary mic and internet found.", d),
+    S("video", "Video streaming from OBS to AC Central", "ok", "OBS is streaming to AC Central (Vimeo) since 9:57 AM.", d),
+    S("record", "Recording in OBS", "ok", "OBS is recording since 9:57 AM.", d),
+    S("audio", "Audio streaming with Rocket Broadcaster", "ok", "Rocket Broadcaster is streaming the audio since 10:00 AM.", d),
+    S("check", "Video and sound checked on AC Central", "ok", "Checked at 10:03 AM. AC Central lists Morris North: audio live, video live, public player OK.", d),
+    S("stop", "Stream stopped", "ok", "Stopped at 11:40 AM by the schedule after 103 min.", d),
+    S("analysis", "Speaker, readings and hymns found", "ok", "Minister: Damon Knobloch. Readings: Judges 20:3-31; Mark 9:2-48. Hymns: 3.", d),
+    S("trim", "Recording trimmed", "ok", "Kept 10:01 AM to 11:14 AM.", d),
+    S("vimeo", "Video uploaded to Vimeo", "ok", "Uploaded: https://vimeo.com/1244907519/f2437c2763", d),
+    S("accentral", "Sermon entry on AC Central", "ok", "Entry created: Morris North: 11/8/2026, SUNDAY AM", d),
+    S("sheet", "Google Sheet updated", "ok", "Updated (1 sermon, 3 hymns).", d),
+    S("report", "Report emailed", "ok", "Sent to russ.koehl@morrisnorth.org.", d)];
+  const sum = { speaker: "Damon Knobloch", readings: ["Judges 20:3-31", "Mark 9:2-48"], video: "https://vimeo.com/1244907519/f2437c2763", length: "1:13:26",
+    hymns: [{ number: "93", hymnal: "Hymns of Zion", title: "I Need Thee Every Hour", time: "10:01", how: "announced" }, { number: "5", hymnal: "Hymns of Zion", title: "O Worship the King", time: "10:16", how: "announced #5 Hymns of Zion (0.8)" }, { number: "?", hymnal: "", title: "", time: "11:08", how: "singing 124 s" }] };
+  const bad = allOk(t(12, 8)).map(s => s.key === "vimeo" ? { ...s, status: "failed", detail: "Vimeo upload failed: uploaded, but its link could not be read." } : s.key === "accentral" ? { ...s, status: "skipped", detail: "Not created because the Vimeo upload failed." } : s);
+  state.runs = [
+    { run_key: "2026-11-08_SunPM", run_date: "2026-11-08", service_id: "SunPM", service_name: "Sunday PM", steps: allOk(t(14, 23)), summary: { ...sum, speaker: "Doug Moser", readings: ["Psalms 122:1-9", "Matthew 18:15-17"] } },
+    { run_key: "2026-11-08_SunAM", run_date: "2026-11-08", service_id: "SunAM", service_name: "Sunday AM", steps: bad, summary: sum },
+    { run_key: "2026-11-04_WedPM", run_date: "2026-11-04", service_id: "WedPM", service_name: "Wednesday Evening", steps: allOk(t(21, 17)), summary: { ...sum, speaker: "Adam Zeltwanger", readings: ["Exodus 27:1-21", "Revelation 21:1-7"] } }];
+  state.tests = []; state.requests = []; state.pcSeen = new Date(Date.now() - 40e3);
+  // sample sermons / hymns for the Stats and Copyright tabs
+  const who = ["Doug Moser", "Damon Knobloch", "Adam Zeltwanger", "Ben Furrer", "Chris Westerman"];
+  const chs = ["Psalms 23", "John 3", "Romans 8", "Matthew 5", "Isaiah 53", "Acts 2", "Genesis 1", "Hebrews 11", "Judges 20", "Mark 9", "Psalms 122", "John 10"];
+  const svcs = ["SunAM", "SunPM", "WedPM"];
+  state.sermons = Array.from({ length: 140 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i * 3);
+    return { id: "d" + i, sermon_date: ymd(d), service: svcs[i % 3], speaker: who[(i * 7) % 5], chapters: [chs[(i * 5) % 12], chs[(i * 3 + 1) % 12]] }; });
+  const hy = [["93", "Hymns of Zion", "I Need Thee Every Hour"], ["302", "Hymns of Zion", "How Great Thou Art"], ["5", "Hymns of Zion", "O Worship the King"], ["220", "Zion's Harp", "Boundless Mercy"], ["99", "Zion's Harp", "Battle and Victory"]];
+  state.hymns = Array.from({ length: 30 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - Math.floor(i / 3) * 4); const h = hy[(i * 2) % 5];
+    return { run_key: `${ymd(d)}_SunAM`, seq: i % 3 + 1, sung_date: ymd(d), service_id: "SunAM", service_name: "Sunday AM", sung_time: `10:0${i % 3}`, number: h[0], hymnal: h[1], title: h[2], media: i % 7 ? "Audio and video" : "Audio" }; });
+  state.rights = new Map([["Hymns of Zion|302", { hymnal: "Hymns of Zion", number: "302", status: "copyrighted", ccli: "14181", note: "Stuart K. Hine" }],
+    ["Hymns of Zion|5", { hymnal: "Hymns of Zion", number: "5", status: "public_domain", note: "1833" }]]);
+  state.users = [{ email: "russ.koehl@morrisnorth.org", note: "Russ", is_admin: true, added_at: "2026-11-09T15:00:00Z", added_by: "copied from the HVAC list" },
+                 { email: "someone@example.org", note: "Sound booth", is_admin: false, added_at: "2026-11-09T16:00:00Z", added_by: "russ.koehl@morrisnorth.org" }];
+  // a quick test plays itself, one step every 3 s
+  state.demoTick = () => {
+    const q = state.requests.find(x => x.status === "pending" || x.status === "running"); if (!q) return;
+    const src = state.runs.find(r => r.run_key === q.source_key);
+    let tr = state.tests.find(x => x.run_key === q.test_key);
+    if (!tr) { tr = { run_key: q.test_key, run_date: ymd(new Date()), service_id: "Test" + src.service_id, service_name: `TEST: ${src.service_name} of Nov 8`, is_test: true,
+      steps: src.steps.map(s => ({ ...s, status: "pending", detail: "", at: null })), summary: src.summary }; state.tests.unshift(tr); q.status = "running"; }
+    const i = tr.steps.findIndex(s => s.status === "pending" || s.status === "running");
+    if (i < 0) { q.status = "done"; q.note = "Test passed"; return; }
+    const s = tr.steps[i];
+    if (s.status === "pending") { s.status = "running"; s.detail = "Replaying…"; s.at = new Date().toISOString(); }
+    else { const o = src.steps[i]; s.status = o.status === "skipped" ? "ok" : o.status; s.detail = "Replayed: " + o.detail; s.at = new Date().toISOString(); }
+  };
+}
+function demoRpc(fn, a) {
+  if (fn === "stream_set_manual") { if (a.p_manual) state.control.set(a.p_run_key, { run_key: a.p_run_key, note: a.p_note, set_by: "demo@example.org", set_at: new Date().toISOString() }); else state.control.delete(a.p_run_key); return; }
+  if (fn === "stream_request_test") { if (state.requests.some(q => q.status === "pending" || q.status === "running")) throw new Error("A test is already waiting or running");
+    state.requests.unshift({ id: Date.now(), source_key: a.p_source_key, mode: a.p_mode, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString(), test_key: `${ymd(new Date())}_Test${a.p_source_key.slice(11)}` }); return 1; }
+  if (fn === "stream_cancel_request") { const q = state.requests.find(x => x.id === a.p_id); if (q) q.status = "cancelled"; return; }
+  if (fn === "stream_admin_add_user") { const e = a.p_email.toLowerCase(); const u = state.users.find(x => x.email === e);
+    if (u) { u.note = a.p_note || u.note; u.is_admin = !!a.p_admin; } else state.users.push({ email: e, note: a.p_note, is_admin: !!a.p_admin, added_at: new Date().toISOString(), added_by: "demo" }); return; }
+  if (fn === "stream_set_hymn_rights") { return; }
+  if (fn === "stream_admin_remove_user") { if (a.p_email === "russ.koehl@morrisnorth.org") throw new Error("You cannot remove yourself"); state.users = state.users.filter(x => x.email !== a.p_email); return; }
+}
+
+// ------------------------------------------------------------------ start
+async function boot() {
+  if (demo) { state.user = { email: "russ.koehl@morrisnorth.org" }; state.admin = true; $("#who").textContent = "demo"; await refresh(); return; }
+  const cfg = window.STREAM_CONFIG;
+  if (!cfg || !window.supabase) { screen(el("div", { class: "center" }, el("h2", {}, "Configuration missing"), el("p", {}, "config.js or the Supabase library did not load."))); return; }
+  state.sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);   // same defaults as the HVAC page
+  $("#signout").onclick = () => state.sb.auth.signOut();
+  const onSession = async (session) => {
+    state.user = session?.user || null;
+    $("#signout").style.display = state.user ? "" : "none";
+    $("#who").textContent = state.user ? (state.user.email || "") : "";
+    clearTimeout(state.timer);
+    if (!state.user) { showLogin(); return; }
+    const me = String(state.user.email || "").toLowerCase();
+    const { data, error } = await state.sb.from("stream_allowed_users").select("email,is_admin");
+    const mine = !error && (data || []).find(r => String(r.email).toLowerCase() === me);
+    if (!mine) { showNotAllowed(state.user.email); return; }
+    state.admin = !!mine.is_admin;
+    screen(el("p", { class: "hint", style: "text-align:center;margin-top:20vh" }, "Loading…"));
+    await refresh();
+  };
+  const hash = location.hash || "";
+  if (/error=/.test(hash)) {
+    const q = new URLSearchParams(hash.slice(1));
+    history.replaceState(null, "", location.pathname);
+    showLogin("Sign-in problem: " + (q.get("error_description") || q.get("error") || "unknown") + ". Please try again.");
+    return;
+  }
+  const { data: { session } } = await state.sb.auth.getSession();
+  await onSession(session);
+  state.sb.auth.onAuthStateChange((event, s) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") onSession(s); });
+}
+boot();
+})();
+</script>
+</body>
+</html>
