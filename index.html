@@ -151,7 +151,7 @@
   .tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; }
   .tile b { display:block; font-size: 28px; font-weight: 650; line-height: 1.1; font-variant-numeric: tabular-nums; } .tile span { font-size: 12px; color: var(--muted); }
-  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; } .grid2 > .card { margin-bottom: 0; } .gridgap { height: 16px; }
+  .grid2 { display:grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; } .grid2 > .card { margin-bottom: 0; min-width: 0; } .gridgap { height: 16px; }
   .bars { display:grid; gap: 5px; }
   .bar { display:grid; grid-template-columns: minmax(96px, 38%) 1fr 40px; align-items: center; gap: 8px; font-size: 13px; }
   .bar .bl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
@@ -165,7 +165,7 @@
   .chip.copyrighted { color: var(--critical); border-color: var(--critical); background: var(--badbg); }
   .chip.public_domain { color: var(--good); border-color: var(--good); background: var(--goodbg); }
   .rightsedit { display:flex; gap: 6px; flex-wrap: wrap; align-items: center; } .rightsedit select, .rightsedit input { font-size: 14px; padding: 4px 6px; }
-  @media (max-width: 760px) { .two { grid-template-columns: 1fr; gap: 4px; } .grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; gap: 4px; } .grid2 { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 600px) { header { padding: 8px 12px; gap: 8px; } header h1 { font-size: 16px; } main { padding: 10px; }
     #who { display: none; } .pill { font-size: 11px; padding: 2px 8px; } header button { padding: 4px 8px; font-size: 13px; }
     nav.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 8px 0; } nav.tabs::-webkit-scrollbar { display: none; }
@@ -219,7 +219,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k);
 const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
                 sermons: null, hymns: null, rights: new Map(), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
-                frame: store.get("frame", "2026"), cr: store.get("cr", { preset: "year", from: "", to: "", which: "copy" }), crEdit: null, crMsg: null,
+                frame: store.get("frame", "2026"), statsView: store.get("statsView", "minister"), cr: store.get("cr", { preset: "year", from: "", to: "", which: "copy" }), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
                 testSource: null, testMode: "quick", testMsg: null };
@@ -708,11 +708,53 @@ function renderStats() {
   const hyRows = [...hy.values()].map(e => ({ ...e, _tie: (parseInt(e.number, 10) || 0) }));
   const firstHymn = (state.hymns || []).reduce((a, h) => !a || h.sung_date < a ? h.sung_date : a, "");
 
+  // three pages (Russ, 2026-11-09: "Stats: Minister | Hymn | Readings"); the time frame applies to each
+  const view = ["minister", "hymn", "readings"].includes(state.statsView) ? state.statsView : "minister";
+  const viewBtns = el("div", { class: "seg" }, ...[["minister", "Minister"], ["hymn", "Hymn"], ["readings", "Readings"]].map(([k, label]) =>
+    el("button", { class: view === k ? "on" : "", onclick: () => { state.statsView = k; store.set("statsView", k); render(); } }, label)));
+  const since = state.frame === "all" && sermons.length ? ` (since ${fmtDate(dateOnly(sermons.reduce((a, s) => s.sermon_date < a ? s.sermon_date : a, sermons[0].sermon_date)))})` : "";
   const kids = [];
-  kids.push(el("div", { class: "toolbar" }, el("b", {}, "Time frame"), frameBtns,
-    el("span", { class: "hint" }, `From AC Central's sermon list${state.frame === "all" && sermons.length ? ` (since ${fmtDate(dateOnly(sermons.reduce((a, s) => s.sermon_date < a ? s.sermon_date : a, sermons[0].sermon_date)))})` : ""}.`)));
-  kids.push(el("div", { class: "tiles" }, tile(services, "services"), tile(sermons.length, "sermons"), tile(minRows.filter(m => m.name !== "(not given)").length, "ministers"),
-    tile(chRows.length, "different chapters read"), tile(hymns.length, "hymns sung"), tile(hyRows.length, "different hymns")));
+  kids.push(el("div", { class: "toolbar" }, viewBtns, frameBtns));
+  if (view === "minister") {
+    kids.push(el("div", { class: "tiles" }, tile(services, "services"), tile(sermons.length, "sermons"), tile(minRows.filter(m => m.name !== "(not given)").length, "ministers")));
+    const topMin = [...minRows].filter(m => m.name !== "(not given)").sort((a, b) => b.n - a.n).slice(0, 20);
+    kids.push(el("div", { class: "grid2" },
+      el("section", { class: "card" }, el("h2", {}, "Sermons per minister"),
+        topMin.length ? bars(topMin.map(m => ({ label: m.name, value: m.n })), "sermons") : el("p", { class: "hint" }, "No sermons in this time frame.")),
+      el("section", { class: "card" }, el("h2", {}, `Ministers · ${minRows.length}`),
+        sortTable("ministers", [
+          { key: "name", label: "Minister", val: r => r.name.toLowerCase(), cell: r => r.name },
+          { key: "n", label: "Sermons", val: r => r.n, num: true },
+          { key: "am", label: "Sun AM", val: r => r.SunAM, num: true },
+          { key: "pm", label: "Sun PM", val: r => r.SunPM, num: true },
+          { key: "wed", label: "Wed", val: r => r.WedPM, num: true },
+          { key: "other", label: "Other", val: r => r.other, num: true },
+          { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
+        ], minRows, { key: "n", dir: "desc" }, 30))));
+    kids.push(el("p", { class: "hint", style: "text-align:center" }, `From AC Central's sermon list${since}.`));
+    return screen(...kids);
+  }
+  if (view === "hymn") {
+    const hymnServices = new Set(hymns.map(h => h.run_key)).size;
+    kids.push(el("div", { class: "tiles" }, tile(hymns.length, "hymns sung"), tile(hyRows.length, "different hymns"), tile(hymnServices, "services")));
+    const topHy = [...hyRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
+    kids.push(el("div", { class: "grid2" },
+      el("section", { class: "card" }, el("h2", {}, "Most sung hymns"),
+        topHy.length ? bars(topHy.map(h => ({ label: `${h.number} ${h.title || ""}`.trim(), value: h.n })), "times") : el("p", { class: "hint" }, "No hymns in this time frame.")),
+      el("section", { class: "card" }, el("h2", {}, `Hymns · ${hyRows.length}`),
+        sortTable("hymns", [
+          { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
+          { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
+          { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
+          { key: "n", label: "Sung", val: r => r.n, num: true },
+          { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
+        ], hyRows, { key: "n", dir: "desc" }))));
+    kids.push(el("p", { class: "hint", style: "text-align:center" },
+      `Hymns are known from the automatic analysis${firstHymn ? `, since ${fmtDate(dateOnly(firstHymn))}` : ""}; singing nobody announced is not counted.`));
+    return screen(...kids);
+  }
+  kids.push(el("div", { class: "tiles" }, tile(sermons.length, "sermons"), tile([...books.values()].reduce((a, n) => a + n, 0), "chapters read"),
+    tile(chRows.length, "different chapters"), tile(books.size, "books")));
 
   // Bible chapters
   const topCh = [...chRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
@@ -732,39 +774,7 @@ function renderStats() {
       { key: "last", label: "Last read", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
       { key: "by", label: "Read by", val: r => [...r.by.keys()].join(", ").toLowerCase(), cell: r => [...r.by.entries()].sort((a, b) => b[1] - a[1]).map(([w, n]) => n > 1 ? `${w} (${n})` : w).join(", ") },
     ], chRows, { key: "n", dir: "desc" })));
-
-  // ministers
-  const topMin = [...minRows].filter(m => m.name !== "(not given)").sort((a, b) => b.n - a.n).slice(0, 20);
-  kids.push(el("div", { class: "grid2" },
-    el("section", { class: "card" }, el("h2", {}, "Sermons per minister"),
-      topMin.length ? bars(topMin.map(m => ({ label: m.name, value: m.n })), "sermons") : el("p", { class: "hint" }, "No sermons in this time frame.")),
-    el("section", { class: "card" }, el("h2", {}, `Ministers · ${minRows.length}`),
-      sortTable("ministers", [
-        { key: "name", label: "Minister", val: r => r.name.toLowerCase(), cell: r => r.name },
-        { key: "n", label: "Sermons", val: r => r.n, num: true },
-        { key: "am", label: "Sun AM", val: r => r.SunAM, num: true },
-        { key: "pm", label: "Sun PM", val: r => r.SunPM, num: true },
-        { key: "wed", label: "Wed", val: r => r.WedPM, num: true },
-        { key: "other", label: "Other", val: r => r.other, num: true },
-        { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
-      ], minRows, { key: "n", dir: "desc" }, 30))));
-  kids.push(el("div", { class: "gridgap" }));
-
-  // hymns
-  const topHy = [...hyRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
-  kids.push(el("div", { class: "grid2" },
-    el("section", { class: "card" }, el("h2", {}, "Most sung hymns"),
-      topHy.length ? bars(topHy.map(h => ({ label: `${h.number} ${h.title || ""}`.trim(), value: h.n })), "times") : el("p", { class: "hint" }, "No hymns in this time frame.")),
-    el("section", { class: "card" }, el("h2", {}, `Hymns · ${hyRows.length}`),
-      sortTable("hymns", [
-        { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
-        { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
-        { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
-        { key: "n", label: "Sung", val: r => r.n, num: true },
-        { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(dateOnly(r.last)), nowrap: true },
-      ], hyRows, { key: "n", dir: "desc" }))));
-  kids.push(el("p", { class: "hint", style: "text-align:center" },
-    `Hymns are known from the automatic analysis${firstHymn ? `, since ${fmtDate(dateOnly(firstHymn))}` : ""}; singing nobody announced is not counted. Data copied ${state.statsAt ? fmtTime(new Date(state.statsAt)) : ""}.`));
+  kids.push(el("p", { class: "hint", style: "text-align:center" }, `Chapters without verses, from AC Central's sermon list${since}.`));
   screen(...kids);
 }
 
