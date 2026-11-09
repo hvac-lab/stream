@@ -442,10 +442,11 @@ function runCard(run, title, opts = {}) {
 // ------------------------------------------------------------------ tabs
 function renderTabs() {
   const nav = $("#tabs"); nav.style.display = ""; nav.replaceChildren();
-  if (!TABS.some(([k]) => k === state.tab) || (state.tab === "admin" && !state.admin)) state.tab = "now";
+  const adminOnly = ["tests", "admin"];   // Russ, 2026-11-09: Tests and Admin only for admins
+  if (!TABS.some(([k]) => k === state.tab) || (adminOnly.includes(state.tab) && !state.admin)) state.tab = "now";
   const testLive = state.tests.some(r => overall(r).cls === "running") || state.requests.some(q => q.status === "pending" || q.status === "running");
   for (const [k, label] of TABS) {
-    if (k === "admin" && !state.admin) continue;
+    if (adminOnly.includes(k) && !state.admin) continue;
     nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); window.scrollTo(0, 0);
         if (["stats", "copyright"].includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
       label, k === "tests" && testLive ? el("span", { class: "live", title: "a test is running" }) : null));
@@ -470,7 +471,7 @@ function renderNow() {
   if (current) kids.push(runCard(current, current.run_date === ymd(new Date()) && overall(current).cls === "running" ? "Now" : "Latest service"));
   else kids.push(el("section", { class: "card" }, el("h2", {}, "Latest service"), el("p", { class: "hint" }, "No service has reported yet.")));
   const liveTest = state.tests.find(r => overall(r).cls === "running");
-  if (liveTest) kids.unshift(el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, "A test is running: "), liveTest.service_name + ". ",
+  if (liveTest && state.admin) kids.unshift(el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, "A test is running: "), liveTest.service_name + ". ",
     el("a", { href: "#", onclick: (e) => { e.preventDefault(); state.tab = "tests"; store.set("tab", "tests"); render(); } }, "Watch it on the Tests tab")));
 
   const next = upcoming(5).filter(u => !runs.some(r => r.run_key === u.key && overall(r).cls === "running"));
@@ -764,11 +765,11 @@ function renderStats() {
   const topCh = [...chRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
   const topBooks = [...books.entries()].map(([b, n]) => ({ b, n })).sort((a, b) => b.n - a.n || (BOOK_ORDER.get(a.b) ?? 99) - (BOOK_ORDER.get(b.b) ?? 99)).slice(0, 15);
   const legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:var(--s1)" }), "Old Testament"), el("span", {}, el("i", { style: "background:var(--s2)" }), "New Testament"));
-  kids.push(el("div", { class: "grid2" },
-    el("section", { class: "card" }, el("h2", {}, "Most read chapters"), legend.cloneNode(true),
-      topCh.length ? bars(topCh.map(e => ({ label: e.chapter, value: e.n, color: isNT(e.book) ? "var(--s2)" : "var(--s1)" })), "times") : el("p", { class: "hint" }, "No readings in this time frame.")),
-    el("section", { class: "card" }, el("h2", {}, "Readings by book"), legend,
-      topBooks.length ? bars(topBooks.map(e => ({ label: e.b, value: e.n, color: isNT(e.b) ? "var(--s2)" : "var(--s1)" })), "chapters read") : el("p", { class: "hint" }, "No readings in this time frame."))));
+  kids.push(el("div", { class: "grid2" },   // books first (Russ, 2026-11-09)
+    el("section", { class: "card" }, el("h2", {}, "Readings by book"), legend.cloneNode(true),
+      topBooks.length ? bars(topBooks.map(e => ({ label: e.b, value: e.n, color: isNT(e.b) ? "var(--s2)" : "var(--s1)" })), "chapters read") : el("p", { class: "hint" }, "No readings in this time frame.")),
+    el("section", { class: "card" }, el("h2", {}, "Most read chapters"), legend,
+      topCh.length ? bars(topCh.map(e => ({ label: e.chapter, value: e.n, color: isNT(e.book) ? "var(--s2)" : "var(--s1)" })), "times") : el("p", { class: "hint" }, "No readings in this time frame."))));
   kids.push(el("div", { class: "gridgap" }));
   kids.push(el("section", { class: "card" }, el("h2", {}, `Bible chapters read · ${chRows.length}`),
     sortTable("chapters", [
@@ -1055,8 +1056,8 @@ async function demoLoad() {
   const today = new Date(); const t = (h, m) => { const d = new Date(today); d.setHours(h, m, 0, 0); return d.toISOString(); };
   const S = (key, label, status, detail, at) => ({ key, label, status, detail, at });
   state.schedule = { services: [
-    { id: "SunAM", name: "Sunday AM", days: ["Sunday"], weeksOfMonth: null, start: "09:57", check: "10:03", cutoff: "11:40", enabled: true },
-    { id: "SunPM", name: "Sunday PM", days: ["Sunday"], weeksOfMonth: null, start: "12:12", check: "12:18", cutoff: "14:00", enabled: true },
+    { id: "SunAM", name: "Sunday AM", days: ["Sunday"], weeksOfMonth: null, start: "09:57", check: "10:03", cutoff: "11:25", enabled: true },
+    { id: "SunPM", name: "Sunday PM", days: ["Sunday"], weeksOfMonth: null, start: "12:12", check: "12:18", cutoff: "13:40", enabled: true },
     { id: "WedPM", name: "Wednesday Evening", days: ["Wednesday"], weeksOfMonth: [1, 3], start: "19:12", check: "19:18", cutoff: "20:45", enabled: true } ] };
   const allOk = (d) => [
     S("start", "Automatic start", "ok", "Started by the schedule at 9:57 AM; camera, Sanctuary mic and internet found.", d),
@@ -1120,7 +1121,7 @@ function demoRpc(fn, a) {
 
 // ------------------------------------------------------------------ start
 async function boot() {
-  if (demo) { state.user = { email: "russ.koehl@morrisnorth.org" }; state.admin = true; $("#who").textContent = "demo"; await refresh(); return; }
+  if (demo) { state.user = { email: "russ.koehl@morrisnorth.org" }; state.admin = params.get("admin") !== "0"; /* &admin=0: see the page as a non-admin */ $("#who").textContent = "demo"; await refresh(); return; }
   const cfg = window.STREAM_CONFIG;
   if (!cfg || !window.supabase) { screen(el("div", { class: "center" }, el("h2", {}, "Configuration missing"), el("p", {}, "config.js or the Supabase library did not load."))); return; }
   state.sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);   // same defaults as the HVAC page
