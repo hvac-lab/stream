@@ -220,7 +220,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k);
 const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
                 sermons: null, hymns: null, rights: new Map(), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
-                frame: store.get("frame", "2026"), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crEdit: null, crMsg: null,
+                frame: store.get("frame", "2026"), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
                 testSource: null, testMode: "quick", testMsg: null };
@@ -614,7 +614,7 @@ async function loadStats() {
   const [s, h, r] = await Promise.all([
     fetchAll("stream_sermons", "id,sermon_date,service,speaker,chapters", "sermon_date"),
     fetchAll("stream_hymns", "run_key,seq,sung_date,service_id,service_name,sung_time,number,hymnal,title,how,media", "sung_date"),
-    fetchAll("stream_hymn_rights", "hymnal,number,status,ccli,note,updated_by,updated_at", "updated_at"),
+    fetchAll("stream_hymn_rights", "hymnal,number,title,status,ccli,note,updated_by,updated_at", "updated_at"),
   ]);
   state.sermons = s; state.hymns = h; state.rights = new Map(r.map(x => [`${x.hymnal}|${x.number}`, x])); state.statsAt = Date.now();
 }
@@ -795,6 +795,18 @@ function crRange() {
   return { from: `${y}-01-01`, to: ymd(t) };
 }
 function rightsOf(h) { return state.rights.get(`${h.hymnal}|${h.number}`) || { status: "unknown" }; }
+// streamed hymns -> one entry per hymn; total = what to report: audio and video counts 2, audio only or video only 1
+function tallyHymns(list) {
+  const by = new Map();
+  for (const h of list) {
+    const k = `${h.hymnal}|${h.number}`;
+    const e = by.get(k) || { key: k, number: h.number, hymnal: h.hymnal, title: h.title, n: 0, av: 0, a: 0, v: 0, total: 0, last: "", _tie: parseInt(h.number, 10) || 0 };
+    e.n++; if (h.media === "Audio and video") e.av++; else if (h.media === "Audio") e.a++; else if (h.media === "Video") e.v++;
+    e.total = 2 * e.av + e.a + e.v;
+    if (h.sung_date > e.last) e.last = h.sung_date; by.set(k, e);
+  }
+  return by;
+}
 function renderCopyright() {
   if (!state.sermons) return loadingCard();
   const { from, to } = crRange();
@@ -806,24 +818,50 @@ function renderCopyright() {
     ...[["only", "Copyrighted only"], ["all", "All hymns"]].map(([v, t]) => { const o = el("option", { value: v }, t); if (state.cr.which === v) o.selected = true; return o; }));
   const rows = (state.hymns || []).filter(h => { const d = String(h.sung_date).slice(0, 10); return d >= from && d <= to; });
   const keep = (h) => { const s = rightsOf(h).status; return state.cr.which === "all" || s === "copyrighted"; };
-  const shown = rows.filter(keep);
-  const by = new Map();
-  for (const h of shown) {
-    const k = `${h.hymnal}|${h.number}`;
-    const e = by.get(k) || { key: k, number: h.number, hymnal: h.hymnal, title: h.title, n: 0, av: 0, a: 0, v: 0, last: "", _tie: parseInt(h.number, 10) || 0 };
-    e.n++; if (h.media === "Audio and video") e.av++; else if (h.media === "Audio") e.a++; else if (h.media === "Video") e.v++;
-    if (h.sung_date > e.last) e.last = h.sung_date; by.set(k, e);
-  }
+  // two pages (Russ, 2026-11-09): the report of what was streamed, and every copyrighted hymn with its count
+  const view = state.crView === "list" ? "list" : "report";
+  const shown = rows.filter(view === "list" ? (h => rightsOf(h).status === "copyrighted") : keep);
+  const by = tallyHymns(shown);
   const sum = [...by.values()];
-  for (const e of sum) e.total = 2 * e.av + e.a + e.v;   // to report: audio and video counts 2, audio only or video only 1
   const tot = sum.reduce((t, e) => ({ total: t.total + e.total, av: t.av + e.av, a: t.a + e.a, v: t.v + e.v, n: t.n + e.n }), { total: 0, av: 0, a: 0, v: 0, n: 0 });
+  const unknownMedia = tot.n - tot.av - tot.a - tot.v;
   const counted = (state.hymns || []).length;
   const kids = [];
+  kids.push(el("div", { class: "toolbar" }, el("div", { class: "seg" }, ...[["report", "Report"], ["list", "Copyrighted hymns"]].map(([k, label]) =>
+    el("button", { class: view === k ? "on" : "", onclick: () => { state.crView = k; store.set("crView", k); state.crEdit = null; render(); } }, label)))));
   kids.push(el("section", { class: "card" }, el("h2", {}, "Report period"),
     el("div", { class: "toolbar", style: "margin-bottom:8px" }, el("div", { class: "seg" }, ...presets.map(([k, label]) => el("button", { class: state.cr.preset === k ? "on" : "", onclick: () => setCr({ preset: k }) }, label)))),
-    el("div", { class: "toolbar", style: "margin:0" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn), el("label", {}, "Show", which)),
-    el("p", { class: "hint", style: "margin:8px 0 0" }, `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}: ${rows.length} hymn${rows.length === 1 ? "" : "s"} streamed, ${shown.length} shown. `,
-      "Copyright status comes from the ACCA list Copyrighted Songs in ACCA Hymnals (updated 3.18.26). Admins can change a hymn with Edit.")));
+    el("div", { class: "toolbar", style: "margin:0" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn), view === "report" ? el("label", {}, "Show", which) : null),
+    el("p", { class: "hint", style: "margin:8px 0 0" }, `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}: ${rows.length} hymn${rows.length === 1 ? "" : "s"} streamed, ${shown.length} ${view === "list" ? "copyrighted" : "shown"}. `,
+      "Copyright status comes from the ACCA list Copyrighted Songs in ACCA Hymnals (updated 3.18.26). Admins can change a hymn with Edit on the Report page.")));
+
+  if (view === "list") {
+    // every hymn on the copyright list, streamed in the period or not; one number each (audio and video = 2, one of them = 1)
+    const onList = [...state.rights.values()].filter(r => r.status === "copyrighted");
+    const hymnals = [...new Set(onList.map(r => r.hymnal || ""))].sort((a, b) => (a !== "Hymns of Zion") - (b !== "Hymns of Zion") || a.localeCompare(b));   // ties: by hymnal, then number
+    const list = onList.map(r => {
+      const k = `${r.hymnal}|${r.number}`; const e = by.get(k);
+      return { key: k, number: r.number, hymnal: r.hymnal, title: r.title || e?.title || "", total: e ? e.total : 0, n: e ? e.n : 0, last: e ? e.last : "", ccli: r.ccli || "",
+               _tie: hymnals.indexOf(r.hymnal || "") * 100000 + (parseInt(r.number, 10) || 0) };
+    });
+    const streamed = list.filter(r => r.n > 0).length;
+    kids.push(el("div", { class: "tiles" }, tile(list.length, "copyrighted hymns"), tile(streamed, "streamed in this period"), tile(tot.total, "times counted")));
+    kids.push(el("section", { class: "card" }, el("h2", {}, `Copyrighted hymns · ${list.length}`),
+      list.length ? sortTable("crall", [
+        { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
+        { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true, cls: "opt-col" },   // phones: #, title, count
+        { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
+        { key: "total", label: "Times streamed", val: r => r.total, num: true, cell: r => r.total ? String(r.total) : el("span", { class: "hint" }, "0") },
+        { key: "last", label: "Last streamed", val: r => r.last || "", cell: r => r.last ? fmtDate(dateOnly(r.last)) : el("span", { class: "hint" }, "not in this period"), nowrap: true, cls: "opt-col" },
+        { key: "ccli", label: "CCLI #", val: r => r.ccli, nowrap: true, cls: "opt-col" },
+      ], list, { key: "total", dir: "desc" }, 200) : el("p", { class: "hint" }, "The copyright list is not loaded."),
+      list.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`copyrighted-hymns-${from}-to-${to}.csv`,
+        ["Number", "Hymnal", "Title", "Times streamed", "Last streamed", "CCLI song"],
+        [...list].sort((a, b) => b.total - a.total || a._tie - b._tie).map(r => [r.number, r.hymnal, r.title, r.total, r.last ? String(r.last).slice(0, 10) : "", r.ccli])) }, "Download as a spreadsheet (CSV)") : null,
+      el("p", { class: "hint", style: "margin:10px 0 0" }, "Times streamed: a hymn streamed with audio and video counts 2, with only one of them 1.",
+        unknownMedia ? ` ${unknownMedia} time${unknownMedia === 1 ? "" : "s"} streamed as not known, not counted.` : "")));
+    return screen(...kids);
+  }
 
   // the summary to report: hymn and quantity
   const editCell = (r) => {
@@ -837,12 +875,11 @@ function renderCopyright() {
     const note = el("input", { type: "text", value: cur.note || "", placeholder: "note (e.g. author, year)", style: "width:170px" });
     const save = el("button", { class: "small primary", onclick: async () => { save.disabled = true;
       try { await rpc("stream_set_hymn_rights", { p_hymnal: r.hymnal || "", p_number: r.number, p_status: sel.value, p_ccli: ccli.value.trim() || null, p_note: note.value.trim() || null });
-        state.rights.set(r.key, { hymnal: r.hymnal, number: r.number, status: sel.value, ccli: ccli.value.trim(), note: note.value.trim() }); state.crEdit = null; state.crMsg = { ok: true, text: `${r.number} ${r.title}: saved.` }; }
+        state.rights.set(r.key, { ...cur, hymnal: r.hymnal, number: r.number, status: sel.value, ccli: ccli.value.trim(), note: note.value.trim() }); state.crEdit = null; state.crMsg = { ok: true, text: `${r.number} ${r.title}: saved.` }; }
       catch (e) { state.crMsg = { ok: false, text: "Could not save: " + (e.message || e) }; }
       render(); } }, "Save");
     return el("span", { class: "rightsedit" }, sel, ccli, note, save, el("button", { class: "small", onclick: () => { state.crEdit = null; render(); } }, "Cancel"));
   };
-  const unknownMedia = tot.n - tot.av - tot.a - tot.v;
   kids.push(el("div", { class: "tiles" }, tile(tot.total, "total to report"), tile(`${tot.av} × 2`, "audio and video"), tile(tot.a, "audio only"), tile(tot.v, "video only")));
   if (unknownMedia) kids.push(el("p", { class: "hint", style: "margin:-8px 0 12px" }, `${unknownMedia} time${unknownMedia === 1 ? "" : "s"} streamed as not known, not in the total.`));
   kids.push(el("section", { class: "card" }, el("h2", {}, `Hymns to report · ${sum.length} hymn${sum.length === 1 ? "" : "s"}, ${shown.length} time${shown.length === 1 ? "" : "s"} streamed`),
@@ -1051,7 +1088,8 @@ async function demoLoad() {
   const hy = [["93", "Hymns of Zion", "I Need Thee Every Hour"], ["302", "Hymns of Zion", "How Great Thou Art"], ["5", "Hymns of Zion", "O Worship the King"], ["220", "Zion's Harp", "Boundless Mercy"], ["99", "Zion's Harp", "Battle and Victory"]];
   state.hymns = Array.from({ length: 30 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - Math.floor(i / 3) * 4); const h = hy[(i * 2) % 5];
     return { run_key: `${ymd(d)}_SunAM`, seq: i % 3 + 1, sung_date: ymd(d), service_id: "SunAM", service_name: "Sunday AM", sung_time: `10:0${i % 3}`, number: h[0], hymnal: h[1], title: h[2], media: i % 7 ? "Audio and video" : "Audio" }; });
-  state.rights = new Map([["Hymns of Zion|302", { hymnal: "Hymns of Zion", number: "302", status: "copyrighted", ccli: "14181", note: "Stuart K. Hine" }],
+  state.rights = new Map([["Hymns of Zion|302", { hymnal: "Hymns of Zion", number: "302", title: "How Great Thou Art", status: "copyrighted", ccli: "14181", note: "Stuart K. Hine" }],
+    ["Hymns of Zion|397", { hymnal: "Hymns of Zion", number: "397", title: "Higher Ground", status: "copyrighted", ccli: "21844", note: "Johnson Oatman" }],
     ["Hymns of Zion|5", { hymnal: "Hymns of Zion", number: "5", status: "public_domain", note: "1833" }]]);
   state.users = [{ email: "russ.koehl@morrisnorth.org", note: "Russ", is_admin: true, added_at: "2026-11-09T15:00:00Z", added_by: "copied from the HVAC list" },
                  { email: "someone@example.org", note: "Sound booth", is_admin: false, added_at: "2026-11-09T16:00:00Z", added_by: "russ.koehl@morrisnorth.org" }];
