@@ -12,6 +12,7 @@
     --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
     --grid: #e1e0d9; --border: rgba(11,11,11,0.10); --hover: rgba(11,11,11,0.04);
     --s1:#2a78d6; --s2:#eb6834; --band: rgba(42,120,214,0.10);
+    --s4:#eda100; --s5:#e87ba4; --s6:#008300;   /* hymnals: blue / gold / pink / green, checked together (all pairs, both modes) */
     --good:#0b8a0b; --warning:#b97c00; --critical:#c62f2f; --wait:#898781;
     --goodbg: rgba(12,163,12,.09); --warnbg: rgba(250,178,25,.14); --badbg: rgba(208,59,59,.09);
   }
@@ -21,6 +22,7 @@
       --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
       --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
       --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14);
+      --s4:#c98500; --s5:#d55181; --s6:#008300;
       --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
       --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
     }
@@ -30,6 +32,7 @@
     --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
     --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
     --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14);
+    --s4:#c98500; --s5:#d55181; --s6:#008300;
     --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
     --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
   }
@@ -668,11 +671,15 @@ function sortTable(id, cols, rows, def, limit = 25) {
 function bars(items, unit) {
   const max = Math.max(1, ...items.map(i => i.value));
   return el("div", { class: "bars", role: "img", "aria-label": items.map(i => `${i.label} ${i.value}`).join(", ") },
-    ...items.map(i => el("div", { class: "bar", title: `${i.label}: ${i.value} ${unit}` },
+    ...items.map(i => el("div", { class: "bar", title: `${i.tip || i.label}: ${i.value} ${unit}` },
       el("span", { class: "bl" }, i.label),
       el("span", { class: "bt" }, el("span", { class: "bf", style: `width:${(i.value / max * 100).toFixed(1)}%;background:${i.color || "var(--s1)"}` })),
       el("span", { class: "bv" }, String(i.value)))));
 }
+// Hymnal colors (Most sung hymns). Fixed per hymnal so a hymnal keeps its color in every time frame; Tabernacle
+// numbers are stored under Hymns of Zion (combined numbering). Other hymnals are gray.
+const HYMNAL_COLORS = [["Zion's Harp", "var(--s1)"], ["Hymns of Zion", "var(--s4)"], ["Hymns of Christmas", "var(--s6)"], ["Hymns of Easter", "var(--s5)"]];
+const hymnalColor = (h) => (HYMNAL_COLORS.find(([name]) => name === (h === "Tabernacle Hymns" ? "Hymns of Zion" : h)) || [, "var(--muted)"])[1];
 const tile = (n, label) => el("div", { class: "tile" }, el("b", {}, String(n)), el("span", {}, label));
 function downloadCsv(name, header, rows) {
   const q = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -756,9 +763,13 @@ function renderStats() {
     const hymnServices = new Set(hymns.map(h => h.run_key)).size;
     kids.push(el("div", { class: "tiles" }, tile(hymns.length, "hymns sung"), tile(hyRows.length, "different hymns"), tile(hymnServices, "services")));
     const topHy = [...hyRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
+    // one color per hymnal, always the same (Russ, 2026-11-09); the legend lists the hymnals in the chart
+    const hymnalsShown = HYMNAL_COLORS.filter(([name]) => topHy.some(h => hymnalColor(h.hymnal) === hymnalColor(name)));
+    if (topHy.some(h => hymnalColor(h.hymnal) === "var(--muted)")) hymnalsShown.push(["Other hymnal", "var(--muted)"]);
     kids.push(el("div", { class: "grid2" },
       el("section", { class: "card" }, el("h2", {}, "Most sung hymns"),
-        topHy.length ? bars(topHy.map(h => ({ label: `${h.number} ${h.title || ""}`.trim(), value: h.n })), "times") : el("p", { class: "hint" }, "No hymns in this time frame.")),
+        el("div", { class: "legend", style: "flex-wrap:wrap" }, ...hymnalsShown.map(([name, c]) => el("span", {}, el("i", { style: `background:${c}` }), name))),
+        topHy.length ? bars(topHy.map(h => ({ label: `${h.number} ${h.title || ""}`.trim(), value: h.n, color: hymnalColor(h.hymnal), tip: `${h.number} ${h.title || ""} (${h.hymnal || "hymnal not known"})` })), "times") : el("p", { class: "hint" }, "No hymns in this time frame.")),
       el("section", { class: "card" }, el("h2", {}, `Hymns · ${hyRows.length}`),
         sortTable("hymns", [
           { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
@@ -1099,8 +1110,9 @@ async function demoLoad() {
   const svcs = ["SunAM", "SunPM", "WedPM"];
   state.sermons = Array.from({ length: 140 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i * 3);
     return { id: "d" + i, sermon_date: ymd(d), service: svcs[i % 3], speaker: who[(i * 7) % 5], chapters: [chs[(i * 5) % 12], chs[(i * 3 + 1) % 12]] }; });
-  const hy = [["93", "Hymns of Zion", "I Need Thee Every Hour"], ["302", "Hymns of Zion", "How Great Thou Art"], ["5", "Hymns of Zion", "O Worship the King"], ["220", "Zion's Harp", "Boundless Mercy"], ["99", "Zion's Harp", "Battle and Victory"]];
-  state.hymns = Array.from({ length: 30 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - Math.floor(i / 3) * 4); const h = hy[(i * 2) % 5];
+  const hy = [["93", "Hymns of Zion", "I Need Thee Every Hour"], ["302", "Hymns of Zion", "How Great Thou Art"], ["5", "Hymns of Zion", "O Worship the King"], ["220", "Zion's Harp", "Boundless Mercy"], ["99", "Zion's Harp", "Battle and Victory"],
+              ["1", "Hymns of Christmas", "Angels From the Realms of Glory"], ["1", "Hymns of Easter", "I Love Jesus"], ["1", "Gospel Hymns", "All People that on Earth"]];
+  state.hymns = Array.from({ length: 30 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - Math.floor(i / 3) * 4); const h = hy[(i * 3) % 8];
     return { run_key: `${ymd(d)}_SunAM`, seq: i % 3 + 1, sung_date: ymd(d), service_id: "SunAM", service_name: "Sunday AM", sung_time: `10:0${i % 3}`, number: h[0], hymnal: h[1], title: h[2], media: i % 7 ? "Audio and video" : "Audio" }; });
   state.rights = new Map([["Hymns of Zion|302", { hymnal: "Hymns of Zion", number: "302", title: "How Great Thou Art", status: "copyrighted", ccli: "14181", note: "Stuart K. Hine" }],
     ["Hymns of Zion|397", { hymnal: "Hymns of Zion", number: "397", title: "Higher Ground", status: "copyrighted", ccli: "21844", note: "Johnson Oatman" }],
