@@ -125,7 +125,8 @@
   table.hist .svc-under { display: none; color: var(--ink-2); font-size: 12px; margin-left: 14px; }
   table.hist tr.detailrow > td { background: var(--page); padding: 6px 12px 16px; }
   .two { display:grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
-  .two h4 { margin: 10px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); }
+  .stack { max-width: 860px; } .stack h4 + ol.steps { margin-top: 4px; } .stack .facts { margin-bottom: 4px; }
+  .two h4, .stack h4 { margin: 14px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); }
   table.hymns { font-size: 13px; } table.hymns td, table.hymns th { padding: 4px 6px; }
   table.hymns td.n { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   table.hymns td.how { color: var(--muted); font-size: 12px; }
@@ -377,11 +378,13 @@ function facts(run) {
   if (s.accentral) add("AC Central", s.accentral.replace(/^done \S+ \S+ - /, ""));
   return dl;
 }
-// Full detail of one run: facts + hymns beside the 12 steps.
+// Full detail of one run: the 12 steps, then the minister / readings and the hymns under them
+// (Russ, 2026-11-09: side by side with the steps was messy)
 function runDetail(run) {
-  return el("div", { class: "two" },
-    el("div", {}, el("h4", {}, "Steps"), stepList(run)),
-    el("div", {}, el("h4", {}, "Service"), facts(run), el("h4", {}, `Hymns (${(run.summary?.hymns || []).length})`), hymnTable(run.summary)));
+  return el("div", { class: "stack" },
+    el("h4", {}, "Steps"), stepList(run),
+    el("h4", {}, "Service"), facts(run),
+    el("h4", {}, `Hymns (${(run.summary?.hymns || []).length})`), hymnTable(run.summary));
 }
 
 // "Run by hand" / "Back to automatic" for one service run, with an inline confirmation.
