@@ -219,7 +219,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k);
 const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
                 sermons: null, hymns: null, rights: new Map(), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
-                frame: store.get("frame", "2026"), statsView: store.get("statsView", "minister"), cr: store.get("cr", { preset: "year", from: "", to: "", which: "copy" }), crEdit: null, crMsg: null,
+                frame: store.get("frame", "2026"), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
                 testSource: null, testMode: "quick", testMsg: null };
@@ -779,7 +779,7 @@ function renderStats() {
 }
 
 // ------------------------------------------------------------------ Copyright
-const RIGHTS_WORD = { copyrighted: "Copyrighted", public_domain: "Public domain", unknown: "Unknown" };
+const RIGHTS_WORD = { copyrighted: "Copyrighted", public_domain: "Public domain", unknown: "Not on the list" };   // the ACCA list is loaded (2026-11-09)
 function crRange() {
   const t = new Date(), y = t.getFullYear(), m = t.getMonth();
   const p = state.cr.preset;
@@ -794,14 +794,14 @@ function rightsOf(h) { return state.rights.get(`${h.hymnal}|${h.number}`) || { s
 function renderCopyright() {
   if (!state.sermons) return loadingCard();
   const { from, to } = crRange();
-  const setCr = (patch) => { state.cr = { ...state.cr, ...patch }; store.set("cr", state.cr); state.crEdit = null; render(); };
+  const setCr = (patch) => { state.cr = { ...state.cr, ...patch }; store.set("cr2", state.cr); state.crEdit = null; render(); };
   const presets = [["month", "This month"], ["lastmonth", "Last month"], ["year", "This year"], ["12m", "Past 12 months"], ["all", "All"]];
   const fromIn = el("input", { type: "date", value: from, onchange: (e) => setCr({ preset: "custom", from: e.target.value, to }) });
   const toIn = el("input", { type: "date", value: to, onchange: (e) => setCr({ preset: "custom", from, to: e.target.value }) });
   const which = el("select", { onchange: (e) => setCr({ which: e.target.value }) },
-    ...[["copy", "Copyrighted and not yet known"], ["only", "Copyrighted only"], ["all", "All hymns"]].map(([v, t]) => { const o = el("option", { value: v }, t); if (state.cr.which === v) o.selected = true; return o; }));
+    ...[["only", "Copyrighted only"], ["all", "All hymns"]].map(([v, t]) => { const o = el("option", { value: v }, t); if (state.cr.which === v) o.selected = true; return o; }));
   const rows = (state.hymns || []).filter(h => { const d = String(h.sung_date).slice(0, 10); return d >= from && d <= to; });
-  const keep = (h) => { const s = rightsOf(h).status; return state.cr.which === "all" || (state.cr.which === "only" ? s === "copyrighted" : s !== "public_domain"); };
+  const keep = (h) => { const s = rightsOf(h).status; return state.cr.which === "all" || s === "copyrighted"; };
   const shown = rows.filter(keep);
   const by = new Map();
   for (const h of shown) {
@@ -817,7 +817,7 @@ function renderCopyright() {
     el("div", { class: "toolbar", style: "margin-bottom:8px" }, el("div", { class: "seg" }, ...presets.map(([k, label]) => el("button", { class: state.cr.preset === k ? "on" : "", onclick: () => setCr({ preset: k }) }, label)))),
     el("div", { class: "toolbar", style: "margin:0" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn), el("label", {}, "Show", which)),
     el("p", { class: "hint", style: "margin:8px 0 0" }, `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}: ${rows.length} hymn${rows.length === 1 ? "" : "s"} streamed, ${shown.length} shown. `,
-      "The hymn data carries no copyright information: mark each hymn once with Edit (admins) and it is remembered for every report.")));
+      "Copyright status comes from the ACCA list Copyrighted Songs in ACCA Hymnals (updated 3.18.26). Admins can change a hymn with Edit.")));
 
   // the summary to report: hymn and quantity
   const editCell = (r) => {
