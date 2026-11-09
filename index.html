@@ -820,14 +820,16 @@ function crRange() {
   return { from: `${y}-01-01`, to: ymd(t) };
 }
 function rightsOf(h) { return state.rights.get(`${h.hymnal}|${h.number}`) || { status: "unknown" }; }
-// streamed hymns -> one entry per hymn; total = what to report: audio and video counts 2, audio only or video only 1
+// What one stream of a hymn counts for copyright (Russ, 2026-11-09): on the video stream = 2 (the audio stream
+// runs then too), audio only = 1; no recording found = not known, 0.
+const streamCount = (h) => /video/i.test(h.media || "") ? 2 : /audio/i.test(h.media || "") ? 1 : 0;
+// streamed hymns -> one entry per hymn: n = times streamed, total = the count to report
 function tallyHymns(list) {
   const by = new Map();
   for (const h of list) {
     const k = `${h.hymnal}|${h.number}`;
-    const e = by.get(k) || { key: k, number: h.number, hymnal: h.hymnal, title: h.title, n: 0, av: 0, a: 0, v: 0, total: 0, last: "", _tie: parseInt(h.number, 10) || 0 };
-    e.n++; if (h.media === "Audio and video") e.av++; else if (h.media === "Audio") e.a++; else if (h.media === "Video") e.v++;
-    e.total = 2 * e.av + e.a + e.v;
+    const e = by.get(k) || { key: k, number: h.number, hymnal: h.hymnal, title: h.title, n: 0, total: 0, unknown: 0, last: "", _tie: parseInt(h.number, 10) || 0 };
+    e.n++; e.total += streamCount(h); if (!streamCount(h)) e.unknown++;
     if (h.sung_date > e.last) e.last = h.sung_date; by.set(k, e);
   }
   return by;
@@ -848,8 +850,8 @@ function renderCopyright() {
   const shown = rows.filter(view === "list" ? (h => rightsOf(h).status === "copyrighted") : keep);
   const by = tallyHymns(shown);
   const sum = [...by.values()];
-  const tot = sum.reduce((t, e) => ({ total: t.total + e.total, av: t.av + e.av, a: t.a + e.a, v: t.v + e.v, n: t.n + e.n }), { total: 0, av: 0, a: 0, v: 0, n: 0 });
-  const unknownMedia = tot.n - tot.av - tot.a - tot.v;
+  const tot = sum.reduce((t, e) => ({ total: t.total + e.total, n: t.n + e.n, unknown: t.unknown + e.unknown }), { total: 0, n: 0, unknown: 0 });
+  const unknownMedia = tot.unknown;
   const counted = (state.hymns || []).length;
   const kids = [];
   kids.push(el("div", { class: "toolbar" }, el("div", { class: "seg" }, ...[["report", "Report"], ["list", "Copyrighted hymns"]].map(([k, label]) =>
@@ -861,7 +863,7 @@ function renderCopyright() {
       "Copyright status comes from the ACCA list Copyrighted Songs in ACCA Hymnals (updated 3.18.26). Admins can change a hymn with Edit on the Report page.")));
 
   if (view === "list") {
-    // every hymn on the copyright list, streamed in the period or not; one number each (audio and video = 2, one of them = 1)
+    // every hymn on the copyright list, streamed in the period or not; one count each (streamCount)
     const onList = [...state.rights.values()].filter(r => r.status === "copyrighted");
     const hymnals = [...new Set(onList.map(r => r.hymnal || ""))].sort((a, b) => (a !== "Hymns of Zion") - (b !== "Hymns of Zion") || a.localeCompare(b));   // ties: by hymnal, then number
     const list = onList.map(r => {
@@ -876,14 +878,14 @@ function renderCopyright() {
         { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
         { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true, cls: "opt-col" },   // phones: #, title, count
         { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
-        { key: "total", label: "Times streamed", val: r => r.total, num: true, cell: r => r.total ? String(r.total) : el("span", { class: "hint" }, "0") },
+        { key: "total", label: "Count", val: r => r.total, num: true, cell: r => r.total ? String(r.total) : el("span", { class: "hint" }, "0") },
         { key: "last", label: "Last streamed", val: r => r.last || "", cell: r => r.last ? fmtDate(dateOnly(r.last)) : el("span", { class: "hint" }, "not in this period"), nowrap: true, cls: "opt-col" },
         { key: "ccli", label: "CCLI #", val: r => r.ccli, nowrap: true, cls: "opt-col" },
       ], list, { key: "total", dir: "desc" }, 200) : el("p", { class: "hint" }, "The copyright list is not loaded."),
       list.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`copyrighted-hymns-${from}-to-${to}.csv`,
-        ["Number", "Hymnal", "Title", "Times streamed", "Last streamed", "CCLI song"],
+        ["Number", "Hymnal", "Title", "Count", "Last streamed", "CCLI song"],
         [...list].sort((a, b) => b.total - a.total || a._tie - b._tie).map(r => [r.number, r.hymnal, r.title, r.total, r.last ? String(r.last).slice(0, 10) : "", r.ccli])) }, "Download as a spreadsheet (CSV)") : null,
-      el("p", { class: "hint", style: "margin:10px 0 0" }, "Times streamed: a hymn streamed with audio and video counts 2, with only one of them 1.",
+      el("p", { class: "hint", style: "margin:10px 0 0" }, "Count: each time on the video stream counts 2 (the audio stream runs then too), audio only counts 1.",
         unknownMedia ? ` ${unknownMedia} time${unknownMedia === 1 ? "" : "s"} streamed as not known, not counted.` : "")));
     return screen(...kids);
   }
@@ -905,25 +907,23 @@ function renderCopyright() {
       render(); } }, "Save");
     return el("span", { class: "rightsedit" }, sel, ccli, note, save, el("button", { class: "small", onclick: () => { state.crEdit = null; render(); } }, "Cancel"));
   };
-  kids.push(el("div", { class: "tiles" }, tile(tot.total, "total to report"), tile(`${tot.av} × 2`, "audio and video"), tile(tot.a, "audio only"), tile(tot.v, "video only")));
-  if (unknownMedia) kids.push(el("p", { class: "hint", style: "margin:-8px 0 12px" }, `${unknownMedia} time${unknownMedia === 1 ? "" : "s"} streamed as not known, not in the total.`));
+  kids.push(el("div", { class: "tiles" }, tile(tot.total, "total to report"), tile(sum.length, `hymn${sum.length === 1 ? "" : "s"}`), tile(tot.n, `time${tot.n === 1 ? "" : "s"} streamed`)));
+  kids.push(el("p", { class: "hint", style: "margin:-8px 0 12px" }, "Each time on the video stream counts 2 (the audio stream runs then too), audio only counts 1.",
+    unknownMedia ? ` ${unknownMedia} time${unknownMedia === 1 ? "" : "s"} with no recording found, not in the total.` : ""));
   kids.push(el("section", { class: "card" }, el("h2", {}, `Hymns to report · ${sum.length} hymn${sum.length === 1 ? "" : "s"}, ${shown.length} time${shown.length === 1 ? "" : "s"} streamed`),
     state.crMsg ? el("div", { class: "msg " + (state.crMsg.ok ? "ok" : "bad"), style: "margin:0 0 8px" }, state.crMsg.text) : null,
     sum.length ? sortTable("crsum", [
       { key: "num", label: "#", val: r => r._tie, cell: r => r.number, num: true },
       { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
       { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
-      { key: "n", label: "Qty", val: r => r.n, num: true },
-      { key: "total", label: "Total", val: r => r.total, num: true },
-      { key: "av", label: "Audio + video", val: r => r.av, num: true, cls: "opt-col" },
-      { key: "a", label: "Audio only", val: r => r.a, num: true, cls: "opt-col" },
-      { key: "v", label: "Video only", val: r => r.v, num: true, cls: "opt-col" },
+      { key: "n", label: "Times streamed", val: r => r.n, num: true, cls: "opt-col" },
+      { key: "total", label: "Count", val: r => r.total, num: true },
       { key: "ccli", label: "CCLI #", val: r => (state.rights.get(r.key)?.ccli || ""), nowrap: true, cls: "opt-col" },
       { key: "rights", label: "Copyright", val: r => (state.rights.get(r.key)?.status || "unknown"), cell: editCell },
-    ], sum, { key: "n", dir: "desc" }, 200) : el("p", { class: "hint" }, "No hymns in this period."),
+    ], sum, { key: "total", dir: "desc" }, 200) : el("p", { class: "hint" }, "No hymns in this period."),
     sum.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`hymns-${from}-to-${to}.csv`,
-      ["Number", "Hymnal", "Title", "Qty", "Total", "Audio and video", "Audio only", "Video only", "CCLI song", "Copyright"],
-      [...sum].sort((a, b) => b.n - a.n || a._tie - b._tie).map(r => [r.number, r.hymnal, r.title, r.n, r.total, r.av, r.a, r.v, state.rights.get(r.key)?.ccli || "", RIGHTS_WORD[state.rights.get(r.key)?.status || "unknown"]])) }, "Download as a spreadsheet (CSV)") : null));
+      ["Number", "Hymnal", "Title", "Times streamed", "Count", "CCLI song", "Copyright"],
+      [...sum].sort((a, b) => b.total - a.total || a._tie - b._tie).map(r => [r.number, r.hymnal, r.title, r.n, r.total, state.rights.get(r.key)?.ccli || "", RIGHTS_WORD[state.rights.get(r.key)?.status || "unknown"]])) }, "Download as a spreadsheet (CSV)") : null));
 
   // every time a hymn was streamed
   kids.push(el("section", { class: "card" }, el("h2", {}, `Each time streamed · ${shown.length}`),
@@ -934,13 +934,13 @@ function renderCopyright() {
       { key: "num", label: "#", val: r => parseInt(r.number, 10) || 0, cell: r => r.number, num: true },
       { key: "hymnal", label: "Hymnal", val: r => (r.hymnal || "").toLowerCase(), cell: r => r.hymnal || "", nowrap: true },
       { key: "title", label: "Title", val: r => (r.title || "").toLowerCase(), cell: r => r.title || "" },
-      { key: "media", label: "Streamed as", val: r => r.media || "", cell: r => r.media || "not known", nowrap: true },
+      { key: "count", label: "Count", val: r => streamCount(r), num: true, cell: r => streamCount(r) ? String(streamCount(r)) : el("span", { class: "hint" }, "not known") },
       { key: "rights", label: "Copyright", val: r => rightsOf(r).status, cell: r => el("span", { class: "chip " + rightsOf(r).status }, RIGHTS_WORD[rightsOf(r).status]) },
     ], shown, { key: "date", dir: "desc" }, 200) : el("p", { class: "hint" }, "Nothing streamed in this period."),
     shown.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`hymns-streamed-${from}-to-${to}.csv`,
-      ["Date", "Service", "Time", "Number", "Hymnal", "Title", "Streamed as", "Copyright"],
-      [...shown].sort((a, b) => (a.sung_date + a.sung_time) < (b.sung_date + b.sung_time) ? -1 : 1).map(r => [String(r.sung_date).slice(0, 10), r.service_name || r.service_id, r.sung_time, r.number, r.hymnal, r.title, r.media, RIGHTS_WORD[rightsOf(r).status]])) }, "Download as a spreadsheet (CSV)") : null,
-    el("p", { class: "hint", style: "margin:10px 0 0" }, `Streamed as: video = the OBS stream to AC Central (Vimeo), audio = the Rocket Broadcaster stream; taken from the recordings of each service. `,
+      ["Date", "Service", "Time", "Number", "Hymnal", "Title", "Count", "Copyright"],
+      [...shown].sort((a, b) => (a.sung_date + a.sung_time) < (b.sung_date + b.sung_time) ? -1 : 1).map(r => [String(r.sung_date).slice(0, 10), r.service_name || r.service_id, r.sung_time, r.number, r.hymnal, r.title, streamCount(r) || "", RIGHTS_WORD[rightsOf(r).status]])) }, "Download as a spreadsheet (CSV)") : null,
+    el("p", { class: "hint", style: "margin:10px 0 0" }, `Count: 2 when the service went out on the video stream (OBS to AC Central; the Rocket Broadcaster audio stream runs then too), 1 for audio only; taken from the recordings of each service. `,
       `Singing nobody announced has no hymn number and is not listed. ${counted} hymns are known in all.`)));
   screen(...kids);
 }
