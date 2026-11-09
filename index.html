@@ -692,7 +692,8 @@ function renderStats() {
       ch.set(c, e);
       const b = bookOf(c); books.set(b, (books.get(b) || 0) + 1);
     }
-    const who = s.speaker || "(not given)";
+    if (!s.speaker) continue;   // no minister (a funeral or event entry): counts for readings only
+    const who = s.speaker;
     const m = min.get(who) || { name: who, n: 0, SunAM: 0, SunPM: 0, WedPM: 0, other: 0, last: "", chapters: new Map() };
     m.n++; if (["SunAM", "SunPM", "WedPM"].includes(s.service)) m[s.service]++; else m.other++;
     if (s.sermon_date > m.last) m.last = s.sermon_date;
