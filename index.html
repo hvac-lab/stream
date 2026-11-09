@@ -220,7 +220,7 @@ const params = new URLSearchParams(location.search);
 const demo = params.get("demo") === "1";
 const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
-const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["tests", "Tests"], ["admin", "Admin"]];
+const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
                 sermons: null, hymns: null, rights: new Map(), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
                 frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
@@ -461,6 +461,7 @@ function render() {
   if (state.tab === "history") return renderHistory();
   if (state.tab === "stats") return renderStats();
   if (state.tab === "copyright") return renderCopyright();
+  if (state.tab === "viewers") return renderViewers();
   if (state.tab === "tests") return renderTests();
   if (state.tab === "admin") return renderAdmin();
   return renderNow();
@@ -943,6 +944,15 @@ function renderCopyright() {
     el("p", { class: "hint", style: "margin:10px 0 0" }, `Count: 2 when the service went out on the video stream (OBS to AC Central; the Rocket Broadcaster audio stream runs then too), 1 for audio only; taken from the recordings of each service. `,
       `Singing nobody announced has no hymn number and is not listed. ${counted} hymns are known in all.`)));
   screen(...kids);
+}
+
+// ------------------------------------------------------------------ Viewers
+// Placeholder (Russ, 2026-11-09): viewers per service for the video stream (AC Central / Vimeo) and the audio
+// stream (Rocket Broadcaster / Radio Mast). Russ will show where the numbers come from; nothing is collected yet.
+function renderViewers() {
+  screen(el("section", { class: "card" }, el("h2", {}, "Viewers"),
+    el("p", {}, "Coming soon: how many people watched the video stream and listened to the audio stream, for each service."),
+    el("p", { class: "hint", style: "margin:0" }, "Not collected yet. Russ will show where these numbers come from, then this page will list them by service with totals.")));
 }
 
 // ------------------------------------------------------------------ Admin (same as the HVAC page's Admin tab)
