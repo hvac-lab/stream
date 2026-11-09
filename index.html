@@ -220,7 +220,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k);
 const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
                 sermons: null, hymns: null, rights: new Map(), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
-                frame: store.get("frame", "2026"), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
+                frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
                 testSource: null, testMode: "quick", testMsg: null };
@@ -632,13 +632,19 @@ const chapterSortKey = (ch) => { const b = bookOf(ch); const n = parseInt(ch.sli
 const SVC_WORD = { SunAM: "Sunday AM", SunPM: "Sunday PM", WedPM: "Wednesday" };
 const dateOnly = (s) => parseYmd(String(s).slice(0, 10));
 
-// The Stats time frame: this year, the past 12 months, or everything since 2015.
+// The Stats time frame: this year, the past 12 months, everything since 2015, or From/To dates ("custom").
+// Every frame shows its dates (Russ, 2026-11-09: "I don't know when all dates started").
 const FRAMES = [["2026", `${new Date().getFullYear()}`], ["12m", "Past 12 months"], ["all", "All years"]];
+function frameRange(earliest = "") {
+  const t = new Date(), today = ymd(t);
+  if (state.frame === "custom") return { from: state.frameDates.from || `${t.getFullYear()}-01-01`, to: state.frameDates.to || today };
+  if (state.frame === "12m") { const a = new Date(t); a.setFullYear(a.getFullYear() - 1); a.setDate(a.getDate() + 1); return { from: ymd(a), to: today }; }
+  if (state.frame === "all") return { from: earliest, to: today };
+  return { from: `${t.getFullYear()}-01-01`, to: today };
+}
 function inFrame(dateStr) {
-  const d = String(dateStr).slice(0, 10), today = ymd(new Date());
-  if (state.frame === "all") return d <= today;
-  if (state.frame === "12m") { const a = new Date(); a.setFullYear(a.getFullYear() - 1); return d > ymd(a) && d <= today; }
-  return d >= `${new Date().getFullYear()}-01-01` && d <= today;
+  const d = String(dateStr).slice(0, 10), { from, to } = frameRange();
+  return d >= from && d <= to;
 }
 
 // A table whose every heading sorts (numbers start high-to-low, words A-Z); long tables show 25 rows until "Show all".
@@ -681,6 +687,7 @@ function renderStats() {
   if (!state.sermons) return loadingCard();
   const sermons = state.sermons.filter(s => inFrame(s.sermon_date));
   const hymns = (state.hymns || []).filter(h => inFrame(h.sung_date));
+  const view = ["minister", "hymn", "readings"].includes(state.statsView) ? state.statsView : "minister";
   const frameBtns = el("div", { class: "seg" }, ...FRAMES.map(([k, label]) =>
     el("button", { class: state.frame === k ? "on" : "", onclick: () => { state.frame = k; store.set("frame", k); render(); } }, label)));
 
@@ -714,12 +721,19 @@ function renderStats() {
   const firstHymn = (state.hymns || []).reduce((a, h) => !a || h.sung_date < a ? h.sung_date : a, "");
 
   // three pages (Russ, 2026-11-09: "Stats: Minister | Hymn | Readings"); the time frame applies to each
-  const view = ["minister", "hymn", "readings"].includes(state.statsView) ? state.statsView : "minister";
   const viewBtns = el("div", { class: "seg" }, ...[["minister", "Minister"], ["hymn", "Hymn"], ["readings", "Readings"]].map(([k, label]) =>
     el("button", { class: view === k ? "on" : "", onclick: () => { state.statsView = k; store.set("statsView", k); render(); } }, label)));
   const since = state.frame === "all" && sermons.length ? ` (since ${fmtDate(dateOnly(sermons.reduce((a, s) => s.sermon_date < a ? s.sermon_date : a, sermons[0].sermon_date)))})` : "";
+  // the dates of the chosen frame, editable; "All years" starts at the first entry this page has
+  const firstSermon = state.sermons.reduce((a, s) => !a || s.sermon_date < a ? s.sermon_date : a, "");
+  const { from, to } = frameRange(String(view === "hymn" ? firstHymn : firstSermon).slice(0, 10));
+  const setDates = (f, t) => { state.frame = "custom"; state.frameDates = { from: f, to: t }; store.set("frame", "custom"); store.set("frameDates", state.frameDates); render(); };
+  const fromIn = el("input", { type: "date", value: from, onchange: (e) => setDates(e.target.value, to) });
+  const toIn = el("input", { type: "date", value: to, onchange: (e) => setDates(from, e.target.value) });
   const kids = [];
   kids.push(el("div", { class: "toolbar" }, viewBtns, frameBtns));
+  kids.push(el("div", { class: "toolbar", style: "margin-top:-6px" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn),
+    el("span", { class: "hint" }, from ? `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}` : "")));
   if (view === "minister") {
     kids.push(el("div", { class: "tiles" }, tile(services, "services"), tile(sermons.length, "sermons"), tile(minRows.filter(m => m.name !== "(not given)").length, "ministers")));
     const topMin = [...minRows].filter(m => m.name !== "(not given)").sort((a, b) => b.n - a.n).slice(0, 20);
