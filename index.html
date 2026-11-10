@@ -198,12 +198,6 @@
   .pm-intro { font-size: 15px; color: var(--ink-2); margin: 0 0 14px; }
   .pm-legend { display:flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); margin: 0 0 12px; }
   .pm-legend i { display:inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
-  .pm-path { display:flex; align-items: stretch; margin: 8px 0 14px; }
-  .pm-path .lbl { flex: 0 0 62px; align-self: center; font-size: 12px; font-weight: 650; color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; }
-  .pm-node { flex: 1 1 0; min-width: 0; border: 1px solid var(--border); border-left: 4px solid var(--k); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
-  .pm-node b { display:block; font-size: 14px; } .pm-node span { display:block; font-size: 12px; color: var(--muted); }
-  .pm-arrow { flex: 0 0 26px; display:flex; align-items: center; justify-content: center; color: var(--muted); font-size: 18px; }
-  .pm-arrow::before { content: "\2192"; }
   .pm-phase { display:grid; grid-template-columns: 170px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--grid); }
   .pm-phase:first-of-type { border-top: none; padding-top: 4px; }
   .pm-when b { display:block; font-size: 15px; } .pm-when span { display:block; font-size: 13px; color: var(--muted); }
@@ -216,9 +210,15 @@
   .pm-step.plain { grid-template-columns: minmax(0, 1fr); } .pm-step.plain p, .pm-step.plain .pm-tools { grid-column: 1; }
   .pm-tools { grid-column: 2; display:flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
   .pm-tools span { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; }
+  .pmx-wrap { overflow-x: auto; } .pmx-wrap svg { display:block; width: 100%; min-width: 860px; height: auto; }
+  .pmx-band { fill: var(--hover); } .pmx-bl { font-size: 11px; font-weight: 650; letter-spacing: .06em; fill: var(--muted); text-anchor: end; }
+  .pmx-box { fill: var(--surface); stroke-width: 2; } .pmx-dec { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.5; }
+  .pmx-t { font-size: 12.5px; font-weight: 550; fill: var(--ink); text-anchor: middle; } .pmx-n { font-size: 11px; font-weight: 700; fill: #fff; text-anchor: middle; }
+  .pmx-a { fill: none; stroke: var(--muted); stroke-width: 1.6; } .pmx-a.dash { stroke-dasharray: 5 4; } .pmx-head { fill: var(--muted); }
+  .pmx-l { font-size: 11px; font-weight: 650; fill: var(--ink-2); }
+  .pmx-swipe { display: none; }
   @media (max-width: 760px) {
-    .pm-path { flex-direction: column; } .pm-path .lbl { flex-basis: auto; align-self: flex-start; margin-bottom: 4px; }
-    .pm-arrow { flex-basis: 22px; } .pm-arrow::before { content: "\2193"; }
+    .pmx-swipe { display: block; }
     .pm-phase { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   }
   @media (max-width: 760px) { .two { grid-template-columns: 1fr; gap: 4px; } .grid2 { grid-template-columns: minmax(0, 1fr); } }
@@ -609,11 +609,75 @@ function renderHistory() {
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
 const MAP_UPDATED = "2026-11-10";
+// The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
+// stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
+function processSvg(K, svcs, t, short) {
+  const S = (tag, attrs = {}, ...kids) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) n.setAttribute(k, v);
+    for (const k of kids) if (k !== null && k !== undefined) n.append(k instanceof Node ? k : document.createTextNode(String(k))); return n; };
+  const text = (cx, cy, lines, cls = "pmx-t") => S("text", { class: cls, x: cx, y: cy - (lines.length - 1) * 7.5 + 4.5 },
+    ...lines.map((l, i) => S("tspan", { x: cx, dy: i ? 15 : 0 }, l)));
+  const badge = (x, y, num, k) => { const w = String(num).length > 1 ? 30 : 20;
+    return S("g", {}, S("rect", { x, y: y - 10, width: w, height: 20, rx: 10, style: `fill:${K[k]}` }), S("text", { class: "pmx-n", x: x + w / 2, y: y + 4 }, num)); };
+  const box = (x, y, w, h, k, lines, num) => S("g", {}, S("rect", { class: "pmx-box", x, y, width: w, height: h, rx: 9, style: `stroke:${K[k]}` }),
+    text(x + w / 2, y + h / 2, lines), num ? badge(x + 8, y, num, k) : null);
+  const term = (x, y, w, h, k, lines) => S("g", {}, S("rect", { class: "pmx-box", x, y, width: w, height: h, rx: h / 2, style: `stroke:${K[k]}` }), text(x + w / 2, y + h / 2, lines));
+  const diamond = (cx, cy, hw, hh, lines) => S("g", {}, S("polygon", { class: "pmx-dec", points: `${cx},${cy - hh} ${cx + hw},${cy} ${cx},${cy + hh} ${cx - hw},${cy}` }), text(cx, cy, lines));
+  const arrow = (pts, dashed) => S("path", { class: "pmx-a" + (dashed ? " dash" : ""), d: "M" + pts.map(p => p.join(" ")).join(" L"), "marker-end": "url(#pmx-arrow)" });
+  const label = (x, y, s, anchor = "middle") => S("text", { class: "pmx-l", x, y, "text-anchor": anchor }, s);
+  const bandLabel = (y, s) => S("text", { class: "pmx-bl", x: 1088, y }, s);
+  const when = (key) => svcs.map(s => `${short[s.id] || s.name} ${t(s[key])}`);
+
+  const after = [[7, "pc", ["Speaker, readings", "& hymns found"]], [8, "pc", ["Recording", "trimmed"]], [9, "online", ["Video uploaded", "to Vimeo"]],
+    [10, "online", ["Sermon entry", "on AC Central"]], [11, "online", ["Google Sheet", "updated"]], [12, "pc", ["Report by", "email + phone"]]];
+  const ax = (i) => 10 + i * 156;   // band 3 boxes: 128 wide, 28 apart
+
+  return S("svg", { viewBox: "0 0 1100 720", role: "img", "aria-label": "Process map of one streamed service, from the scheduled start to the sermon being online" },
+    S("defs", {}, S("marker", { id: "pmx-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: "userSpaceOnUse", orient: "auto-start-reverse" },
+      S("path", { class: "pmx-head", d: "M0 0 L10 5 L0 10 z" }))),
+    S("rect", { class: "pmx-band", x: 0, y: 0, width: 1100, height: 352, rx: 12 }),
+    S("rect", { class: "pmx-band", x: 0, y: 360, width: 1100, height: 202, rx: 12 }),
+    S("rect", { class: "pmx-band", x: 0, y: 570, width: 1100, height: 150, rx: 12 }),
+    bandLabel(22, "LIVE STREAM"), bandLabel(380, "CHECK AND STOP"), bandLabel(606, "AFTER THE SERVICE · 30–40 MIN"),
+
+    // band 1: start, then the two live paths
+    term(10, 150, 120, 50, "pc", ["Scheduled start", "3 min before"]),
+    ...when("start").map((s, i) => label(70, 220 + i * 14, s)),
+    arrow([[130, 175], [149, 175]]),
+    diamond(215, 175, 66, 50, ["Set to run", "by hand?"]),
+    arrow([[215, 225], [215, 262]]), label(223, 248, "Yes", "start"),
+    box(152, 262, 126, 56, "hand", ["A person runs", "the service"]),
+    arrow([[281, 175], [310, 175]]), label(295, 166, "No"),
+    box(310, 145, 125, 60, "pc", ["Start: checks", "camera, mic,", "internet"], 1),
+    arrow([[435, 175], [460, 175], [460, 95], [480, 95]]), arrow([[460, 175], [460, 255], [480, 255]]),
+    box(480, 8, 135, 34, "gear", ["Camera + mic"]), arrow([[547, 42], [547, 68]]),
+    box(480, 68, 135, 54, "pc", ["OBS Studio", "streams + records"], "2·3"),
+    arrow([[615, 95], [650, 95]]), box(650, 68, 135, 54, "online", ["Vimeo", "live event"]),
+    arrow([[785, 95], [820, 95]]), box(820, 68, 150, 54, "people", ["AC Central app", "& website: watch"]),
+    box(480, 308, 135, 34, "gear", ["Sanctuary mic"]), arrow([[547, 308], [547, 282]]),
+    box(480, 228, 135, 54, "pc", ["Rocket", "Broadcaster"], 4),
+    arrow([[615, 255], [650, 255]]), box(650, 228, 135, 54, "online", ["Radio Mast"]),
+    arrow([[785, 255], [820, 255]]), box(820, 228, 150, 54, "people", ["AC Central app", "listen live"]),
+
+    // band 2: health check, decision, alert, cutoff
+    arrow([[372, 205], [372, 395]]), label(380, 300, "while it streams", "start"),
+    box(310, 395, 125, 60, "pc", ["Health check", "6 minutes in"], 5),
+    arrow([[435, 425], [475, 425]]),
+    diamond(530, 425, 55, 42, ["All OK?"]),
+    arrow([[530, 467], [530, 490]]), label(538, 483, "No", "start"),
+    box(470, 490, 120, 50, "hand", ["Alert on phone", "and PC"]),
+    arrow([[590, 515], [715, 515], [715, 455]], true),
+    arrow([[585, 425], [640, 425]]), label(608, 417, "Yes"),
+    box(640, 395, 150, 60, "pc", ["Cutoff:", "stream stopped"], 6),
+    ...when("cutoff").map((s, i) => label(842, 416 + i * 14, s, "start")),
+
+    // band 3: after the service
+    arrow([[790, 425], [830, 425], [830, 585], [74, 585], [74, 620]]),
+    ...after.flatMap(([n, k, lines], i) => [box(ax(i), 620, 128, 70, k, lines, n), arrow([[ax(i) + 128, 655], [ax(i + 1), 655]])]),
+    term(ax(6), 620, 128, 70, "people", ["Sermon online", "for everyone"]));
+}
 function renderProcessMap() {
   const K = { gear: "var(--muted)", pc: "var(--s1)", online: "var(--s3)", people: "var(--s7)", hand: "var(--s4)" };
-  const node = (k, title, sub) => el("div", { class: "pm-node", style: `--k:${K[k]}` }, el("b", {}, title), sub ? el("span", {}, sub) : null);
-  const path = (label, ...nodes) => el("div", { class: "pm-path" }, el("div", { class: "lbl" }, label),
-    ...nodes.flatMap((n, i) => i ? [el("div", { class: "pm-arrow", "aria-hidden": "true" }), n] : [n]));
   const step = (n, title, text, tools = [], k = "pc") => el("div", { class: "pm-step" + (n ? "" : " plain"), style: `--k:${K[k]}` },
     n ? el("span", { class: "n" }, String(n)) : null, el("b", {}, title), el("p", {}, text),
     tools.length ? el("div", { class: "pm-tools" }, ...tools.map(t => el("span", {}, t))) : null);
@@ -633,11 +697,11 @@ function renderProcessMap() {
   screen(
     el("p", { class: "pm-intro" }, "What the church PC does by itself for every Sunday morning, Sunday afternoon and 1st & 3rd Wednesday service, from turning on the stream to the sermon being on AC Central. No one has to be at the PC."),
     legend,
-    el("section", { class: "card" }, el("h2", {}, "Live stream: how the sound and picture reach the congregation"),
-      path("Video", node("gear", "Sanctuary camera + mic"), node("pc", "OBS Studio", "streams and records"), node("online", "Vimeo live event", "carries the video"), node("people", "AC Central app & website", "watch live")),
-      path("Audio", node("gear", "Sanctuary mic"), node("pc", "Rocket Broadcaster", "streams the sound"), node("online", "Radio Mast", "carries the audio"), node("people", "AC Central app", "listen live")),
-      el("p", { class: "hint", style: "margin:0" }, "The PC checks both paths from the outside too, the way a viewer would see and hear them.")),
-    el("section", { class: "card" }, el("h2", {}, "One service, start to finish"),
+    el("section", { class: "card" }, el("h2", {}, "Process map: one service, start to finish"),
+      el("div", { class: "pmx-wrap" }, processSvg(K, svcs, t, short)),
+      el("p", { class: "hint pmx-swipe", style: "margin:6px 0 0" }, "Swipe sideways to see the whole map."),
+      el("p", { class: "hint", style: "margin:6px 0 0" }, "Numbers match the steps below and the 12 steps on the Now tab. Dashed: the stream keeps going after an alert.")),
+    el("section", { class: "card" }, el("h2", {}, "Step by step"),
       phase("Before", ["3 minutes before the service", ...list("start")],
         step(1, "Automatic start", "A scheduled task on the church PC starts the service. It checks the Sanctuary camera, mic and internet first.", ["Windows scheduler"]),
         step(2, "Video streaming", "OBS starts the live video to the Vimeo live event behind AC Central's player.", ["OBS", "Vimeo"]),
