@@ -153,10 +153,14 @@
   .adminAdd input[type=text] { padding: 8px 10px; font-size: 16px; }
   label.chk { display:inline-flex; align-items:center; gap:5px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
   .center { max-width: 460px; margin: 10vh auto; text-align: center; } .center p { color: var(--ink-2); }
-  /* Stats and Copyright tabs */
+  /* Ministers, Hymns, Bible and Copyright tabs */
   .seg { display:inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; padding: 8px 14px; } .seg button + button { border-left: 1px solid var(--border); }
   .seg button.on { background: var(--s1); color: #fff; font-weight: 650; }
+  /* pages inside a tab (Bible: Books | Chapters), a second row of tabs under the main ones */
+  nav.subtabs { display:flex; gap: 4px; border-bottom: 1px solid var(--border); margin: -4px 0 14px; }
+  nav.subtabs button { border: 0; border-radius: 0; background: none; padding: 8px 14px; color: var(--ink-2); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+  nav.subtabs button.on { color: var(--ink); font-weight: 650; border-bottom-color: var(--s1); }
   .toolbar { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
   .toolbar label { font-size: 13px; color: var(--ink-2); display:inline-flex; gap: 6px; align-items: center; }
   input[type=date] { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
@@ -186,6 +190,9 @@
   .chip.copyrighted { color: var(--critical); border-color: var(--critical); background: var(--badbg); }
   .chip.public_domain { color: var(--good); border-color: var(--good); background: var(--goodbg); }
   .rightsedit { display:flex; gap: 6px; flex-wrap: wrap; align-items: center; } .rightsedit select, .rightsedit input { font-size: 14px; padding: 4px 6px; }
+  /* nine tabs fit a tablet; narrower, the tab row swipes sideways (the page itself never does) */
+  @media (max-width: 900px) { nav.tabs { overflow-x: auto; scrollbar-width: none; } nav.tabs::-webkit-scrollbar { display: none; }
+    nav.tabs button { padding: 8px 11px; white-space: nowrap; flex: 0 0 auto; } }
   @media (max-width: 760px) { .two { grid-template-columns: 1fr; gap: 4px; } .grid2 { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 600px) { header { padding: 8px 12px; gap: 8px; } header h1 { font-size: 16px; } main { padding: 10px; }
     #who { display: none; } .pill { font-size: 11px; padding: 2px 8px; } header button { padding: 4px 8px; font-size: 13px; }
@@ -237,10 +244,14 @@ const params = new URLSearchParams(location.search);
 const demo = params.get("demo") === "1";
 const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
-const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["tests", "Tests"], ["admin", "Admin"]];
-const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
+// Ministers, Hymns and Bible were the three pages of one Stats tab until 2026-11-10 (Russ)
+const TABS = [["now", "Now"], ["history", "History"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["tests", "Tests"], ["admin", "Admin"]];
+const STATS_TABS = { ministers: "minister", hymns: "hymn", bible: "readings" };
+const DATA_TABS = [...Object.keys(STATS_TABS), "copyright", "viewers"];   // need loadStats()
+const oldTab = (t) => t === "stats" ? ({ hymn: "hymns", readings: "bible" }[store.get("statsView", "")] || "ministers") : t;
+const state = { sb: null, user: null, admin: false, tab: oldTab(store.get("tab", "now")),
                 sermons: null, hymns: null, rights: new Map(), viewers: [], statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
-                frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), statsView: store.get("statsView", "minister"), booksOpen: store.get("booksOpen", false), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
+                frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), bibleView: store.get("bibleView", "books"), booksOpen: store.get("booksOpen", false), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
                 testSource: null, testMode: "quick", testMsg: null };
@@ -468,15 +479,15 @@ function renderTabs() {
   for (const [k, label] of TABS) {
     if (adminOnly.includes(k) && !state.admin) continue;
     nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); window.scrollTo(0, 0);
-        if (["stats", "copyright", "viewers"].includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
+        if (DATA_TABS.includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
       label, k === "tests" && testLive ? el("span", { class: "live", title: "a test is running" }) : null));
   }
 }
 function render() {
   setPc(); renderTabs();
-  main.className = ["history", "stats", "copyright"].includes(state.tab) ? "" : "narrow";
+  main.className = ["history", "copyright", ...Object.keys(STATS_TABS)].includes(state.tab) ? "" : "narrow";
   if (state.tab === "history") return renderHistory();
-  if (state.tab === "stats") return renderStats();
+  if (STATS_TABS[state.tab]) return renderStats();
   if (state.tab === "copyright") return renderCopyright();
   if (state.tab === "viewers") return renderViewers();
   if (state.tab === "tests") return renderTests();
@@ -723,7 +734,7 @@ function renderStats() {
   if (!state.sermons) return loadingCard();
   const sermons = state.sermons.filter(s => inFrame(s.sermon_date));
   const hymns = (state.hymns || []).filter(h => inFrame(h.sung_date));
-  const view = ["minister", "hymn", "readings"].includes(state.statsView) ? state.statsView : "minister";
+  const view = STATS_TABS[state.tab] || "minister";
   const frameBtns = el("div", { class: "seg" }, ...FRAMES.map(([k, label]) =>
     el("button", { class: state.frame === k ? "on" : "", onclick: () => { state.frame = k; store.set("frame", k); render(); } }, label)));
 
@@ -755,9 +766,10 @@ function renderStats() {
   const hyRows = [...hy.values()].map(e => ({ ...e, _tie: (parseInt(e.number, 10) || 0) }));
   const firstHymn = (state.hymns || []).reduce((a, h) => !a || h.sung_date < a ? h.sung_date : a, "");
 
-  // three pages (Russ, 2026-11-09: "Stats: Minister | Hymn | Readings"); the time frame applies to each
-  const viewBtns = el("div", { class: "seg" }, ...[["minister", "Minister"], ["hymn", "Hymn"], ["readings", "Readings"]].map(([k, label]) =>
-    el("button", { class: view === k ? "on" : "", onclick: () => { state.statsView = k; store.set("statsView", k); render(); } }, label)));
+  // the time frame applies to each tab; the Bible tab has its own pages, one per section (Russ, 2026-11-10)
+  const bibleView = state.bibleView === "chapters" ? "chapters" : "books";
+  const viewBtns = view !== "readings" ? null : el("nav", { class: "subtabs" }, ...[["books", "Books"], ["chapters", "Chapters"]].map(([k, label]) =>
+    el("button", { class: bibleView === k ? "on" : "", onclick: () => { state.bibleView = k; store.set("bibleView", k); render(); } }, label)));
   const since = state.frame === "all" && sermons.length ? ` (since ${fmtDate(dateOnly(sermons.reduce((a, s) => s.sermon_date < a ? s.sermon_date : a, sermons[0].sermon_date)))})` : "";
   // the dates of the chosen frame, editable; "All years" starts at the first entry this page has
   const firstSermon = state.sermons.reduce((a, s) => !a || s.sermon_date < a ? s.sermon_date : a, "");
@@ -766,7 +778,8 @@ function renderStats() {
   const fromIn = el("input", { type: "date", value: from, onchange: (e) => setDates(e.target.value, to) });
   const toIn = el("input", { type: "date", value: to, onchange: (e) => setDates(from, e.target.value) });
   const kids = [];
-  kids.push(el("div", { class: "toolbar" }, viewBtns, frameBtns));
+  if (viewBtns) kids.push(viewBtns);
+  kids.push(el("div", { class: "toolbar" }, frameBtns));
   kids.push(el("div", { class: "toolbar", style: "margin-top:-6px" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn),
     el("span", { class: "hint" }, from ? `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}` : "")));
   if (view === "minister") {
@@ -827,14 +840,12 @@ function renderStats() {
   const toggleBooks = el("button", { class: "small more", "aria-expanded": String(state.booksOpen),
     onclick: () => { state.booksOpen = !state.booksOpen; store.set("booksOpen", state.booksOpen); render(); } },
     state.booksOpen ? "Hide all books ▴" : `Show all ${bookRows.length} books ▾`);
-  kids.push(el("div", { class: "grid2" },   // books first (Russ, 2026-11-09)
-    el("section", { class: "card" }, el("h2", {}, "Readings by book"), legend.cloneNode(true),
+  if (bibleView === "books") {
+    kids.push(el("section", { class: "card" }, el("h2", {}, "Readings by book"), legend,
       topBooks.length ? bars(topBooks.map(e => ({ label: e.b, value: e.n, color: isNT(e.b) ? "var(--s2)" : "var(--s1)" })), "chapters read") : el("p", { class: "hint" }, "No readings in this time frame."),
-      toggleBooks),
-    el("section", { class: "card" }, el("h2", {}, "Most read chapters"), legend,
-      topCh.length ? bars(topCh.map(e => ({ label: e.chapter, value: e.n, color: isNT(e.book) ? "var(--s2)" : "var(--s1)" })), "times") : el("p", { class: "hint" }, "No readings in this time frame."))));
-  kids.push(el("div", { class: "gridgap" }));
-  if (state.booksOpen) {
+      toggleBooks));
+  }
+  if (bibleView === "books" && state.booksOpen) {
     kids.push(el("section", { class: "card" }, el("h2", {}, `All books of the Bible · ${bookRows.length}`),
       sortTable("books", [
         // the dot is the Testament, colored as in the charts (a Testament column did not fit a phone)
@@ -846,7 +857,9 @@ function renderStats() {
       ], bookRows, { key: "book", dir: "asc" }, 100),
       el("p", { class: "hint", style: "margin:8px 0 0" }, "Times read counts each chapter each time it was read; Different chapters counts each chapter once.")));
   }
-  kids.push(el("section", { class: "card" }, el("h2", {}, `Bible chapters read · ${chRows.length}`),
+  if (bibleView === "chapters") kids.push(el("section", { class: "card" }, el("h2", {}, "Most read chapters"), legend,
+    topCh.length ? bars(topCh.map(e => ({ label: e.chapter, value: e.n, color: isNT(e.book) ? "var(--s2)" : "var(--s1)" })), "times") : el("p", { class: "hint" }, "No readings in this time frame.")));
+  if (bibleView === "chapters") kids.push(el("section", { class: "card" }, el("h2", {}, `Bible chapters read · ${chRows.length}`),
     sortTable("chapters", [
       { key: "chapter", label: "Chapter", val: r => r._tie, cell: r => r.chapter, nowrap: true },
       { key: "t", label: "Testament", val: r => isNT(r.book) ? "New" : "Old" },
@@ -1151,7 +1164,7 @@ async function refresh() {
   clearTimeout(state.timer);
   try {
     await load();
-    const statsTab = ["stats", "copyright", "viewers"].includes(state.tab);
+    const statsTab = DATA_TABS.includes(state.tab);
     if (statsTab && (!state.sermons || Date.now() - state.statsAt > 10 * 60e3)) { await loadStats(); if (state.crEdit === null) render(); }
     // do not redraw under an open confirmation, a form being filled in, the admin list or the stats being looked at
     if (!state.asking && state.tab !== "admin" && !statsTab && !(document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName))) render();
