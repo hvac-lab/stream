@@ -169,6 +169,7 @@
   .hy i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   .legend { display:flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px; } .legend i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   table.data td.nc, table.data th.nc { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.data td.ctr, table.data th.ctr { text-align: center; }   /* numbers centered under their heading (Viewers) */
   table.data td { vertical-align: middle; } table.data td.nowrap { white-space: nowrap; }
   @media (min-width: 761px) { table.data td.nowrap-wide { white-space: nowrap; } }   /* one line where there is room, wraps on a phone */
   .more { margin-top: 8px; }
@@ -1024,12 +1025,12 @@ function renderViewers() {
     rows.length ? sortTable("viewers", [
       { key: "date", label: "Date", val: r => r.run_key, cell: r => fmtShortDay(dateOnly(r.service_date)) + ", " + String(r.service_date).slice(0, 4), nowrap: "wide" },
       { key: "svc", label: "Service", val: r => svcName(r), cell: r => svcName(r) },
-      { key: "video", label: "Video", val: r => r.video_peak ?? -1, num: true, cell: r => r.video_peak == null ? el("span", { class: "hint", title: "No Vimeo stream for this service" }, "none") : String(r.video_peak) },
-      { key: "audio", label: "Audio", val: r => r.audio_peak ?? -1, num: true, cell: r => r.audio_peak == null ? el("span", { class: "hint" }, "–") : String(r.audio_peak) },
-      { key: "both", label: "Both", val: r => r.both, num: true },
-      { key: "plays", label: "Video plays", head: "Video plays", val: r => r.video_plays ?? -1, num: true, cls: "opt-col", cell: r => r.video_plays == null ? "" : String(r.video_plays) },
-      { key: "vh", label: "Video hours watched", head: "Video hours", val: r => r.video_seconds ?? -1, num: true, cls: "opt-col", cell: r => hrs(r.video_seconds) },
-      { key: "ah", label: "Audio listener-hours", head: "Audio hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1) },
+      { key: "video", label: "Video", val: r => r.video_peak ?? -1, num: true, cls: "ctr", cell: r => r.video_peak == null ? el("span", { class: "hint", title: "No Vimeo stream for this service" }, "none") : String(r.video_peak) },
+      { key: "audio", label: "Audio", val: r => r.audio_peak ?? -1, num: true, cls: "ctr", cell: r => r.audio_peak == null ? el("span", { class: "hint" }, "–") : String(r.audio_peak) },
+      { key: "both", label: "Both", val: r => r.both, num: true, cls: "ctr" },
+      { key: "plays", label: "Video plays", head: "Video plays", val: r => r.video_plays ?? -1, num: true, cls: "opt-col ctr", cell: r => r.video_plays == null ? "" : String(r.video_plays) },
+      { key: "vh", label: "Video hours watched", head: "Video hours", val: r => r.video_seconds ?? -1, num: true, cls: "opt-col ctr", cell: r => hrs(r.video_seconds) },
+      { key: "ah", label: "Audio listener-hours", head: "Audio hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col ctr", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1) },
     ], rows, { key: "date", dir: "desc" }, 30) : el("p", { class: "hint" }, "No services in this time frame."),
     rows.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`viewers-${from}-to-${to}.csv`,
       ["Date", "Service", "Video viewers (most at once)", "Audio listeners (most at once)", "Both", "Video plays", "Video hours watched", "Audio listener-hours", "Vimeo sessions"],
