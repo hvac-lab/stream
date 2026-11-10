@@ -100,7 +100,8 @@
   .banner.info { border-color: var(--s1); background: var(--band); }
   .ctl { margin-top: 14px; }
   .confirm { margin-top: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 12px; background: var(--warnbg); font-size: 14px; }
-  .confirm p { margin: 0 0 10px; } .confirm .row { display:flex; gap: 8px; } .confirm .row button { flex: 1; padding: 11px; font-weight: 600; }
+  .confirm p { margin: 0 0 10px; } .confirm p.sure { font-size: 16px; font-weight: 700; margin-bottom: 4px; }   /* Russ, 2026-11-10 */
+  .confirm .row { display:flex; gap: 8px; } .confirm .row button { flex: 1; padding: 11px; font-weight: 600; }
   .confirm input[type=text] { width: 100%; margin-bottom: 10px; font-size: 16px; padding: 8px 10px; }
   .msg { font-size: 14px; margin-top: 8px; } .msg.bad { color: var(--critical); } .msg.ok { color: var(--good); }
   .next { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--grid); }
@@ -419,7 +420,7 @@ function manualControl(key, svc, inProgress) {
     const text = inProgress
       ? `The stream keeps running and will NOT be stopped at ${svc ? fmtTime(atTime(new Date(), svc.cutoff)) : "the cutoff"}. Stop it yourself in OBS and Rocket Broadcaster. Nothing is trimmed, uploaded or entered on AC Central.`
       : "The church PC will not start, check, stop, upload or enter this service. Start and stop OBS and Rocket Broadcaster yourself.";
-    box.append(el("div", { class: "confirm" }, el("p", {}, text), note,
+    box.append(el("div", { class: "confirm" }, el("p", { class: "sure" }, "Are you sure?"), el("p", {}, text), note,
       el("div", { class: "row" },
         el("button", { class: "yes", disabled: state.busy, onclick: () => setManual(key, true, note.value.trim()) }, "Yes, run it by hand"),
         el("button", { onclick: () => { state.asking = null; render(); } }, "Cancel"))));
@@ -508,7 +509,7 @@ function renderNow() {
     if (ctl) row.append(el("div", { class: "who" }, `Set by ${ctl.set_by} ${ago(new Date(ctl.set_at))}${ctl.note ? ` (${ctl.note})` : ""}`));
     if (state.asking === u.key) {
       const note = el("input", { type: "text", placeholder: "Reason (optional), e.g. wedding, special program" });
-      row.append(el("div", { class: "confirm" },
+      row.append(el("div", { class: "confirm" }, el("p", { class: "sure" }, "Are you sure?"),
         el("p", {}, `The church PC will not start, check, stop, upload or enter ${u.svc.name} on ${fmtShortDay(u.day)}. Start and stop OBS and Rocket Broadcaster yourself.`), note,
         el("div", { class: "row" },
           el("button", { class: "yes", disabled: state.busy, onclick: () => setManual(u.key, true, note.value.trim()) }, "Yes, run it by hand"),
