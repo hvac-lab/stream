@@ -227,7 +227,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k);
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
 const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
-                sermons: null, hymns: null, rights: new Map(), viewers: [], vwView: store.get("vwView", "services"), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
+                sermons: null, hymns: null, rights: new Map(), viewers: [], statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
                 frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
@@ -979,27 +979,24 @@ function viewerMonths(rows, from, to) {
 function renderViewers() {
   if (!state.sermons) return loadingCard();
   const all = state.viewers || [];
-  const view = state.vwView === "all" ? "all" : "services";
+  // every stream counts as a service, funerals and weddings too (Russ, 2026-11-10)
   const first = all.reduce((a, v) => !a || v.service_date < a ? v.service_date : a, "");
   const { from, to } = frameRange(String(first).slice(0, 10));
-  const rows = all.filter(v => { const d = String(v.service_date).slice(0, 10); return d >= from && d <= to && (view === "all" || v.service_id !== "Other"); })
+  const rows = all.filter(v => { const d = String(v.service_date).slice(0, 10); return d >= from && d <= to; })
     .map(v => ({ ...v, both: (v.video_peak || 0) + (v.audio_peak || 0), _tie: 0 }));
   const svcName = (r) => r.service_id === "Other" ? `Other${r.started_at ? ", " + fmtTime(new Date(r.started_at)) : ""}` : (SVC_WORD[r.service_id] || r.service_id);
 
-  const viewBtns = el("div", { class: "seg" }, ...[["services", "Services"], ["all", "All streams"]].map(([k, label]) =>
-    el("button", { class: view === k ? "on" : "", title: k === "all" ? "Also funerals, weddings and other streams outside the service times" : "Sunday AM, Sunday PM and Wednesday",
-      onclick: () => { state.vwView = k; store.set("vwView", k); render(); } }, label)));
   const frameBtns = el("div", { class: "seg" }, ...FRAMES.map(([k, label]) =>
     el("button", { class: state.frame === k ? "on" : "", onclick: () => { state.frame = k; store.set("frame", k); render(); } }, label)));
   const setDates = (f, t) => { state.frame = "custom"; state.frameDates = { from: f, to: t }; store.set("frame", "custom"); store.set("frameDates", state.frameDates); render(); };
-  const kids = [el("div", { class: "toolbar" }, viewBtns, frameBtns),
+  const kids = [el("div", { class: "toolbar" }, frameBtns),
     el("div", { class: "toolbar", style: "margin-top:-6px" }, el("label", {}, "From", el("input", { type: "date", value: from, onchange: (e) => setDates(e.target.value, to) })),
       el("label", {}, "To", el("input", { type: "date", value: to, onchange: (e) => setDates(from, e.target.value) })),
       el("span", { class: "hint" }, from ? `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}` : ""))];
 
   const vids = rows.filter(r => r.video_peak != null).map(r => r.video_peak), auds = rows.filter(r => r.audio_peak != null).map(r => r.audio_peak);
   const top = rows.reduce((a, r) => !a || r.both > a.both ? r : a, null);
-  kids.push(el("div", { class: "tiles" }, tile(rows.length, view === "all" ? "streams" : "services"), tile(avg1(vids), "video viewers, average"),
+  kids.push(el("div", { class: "tiles" }, tile(rows.length, "services"), tile(avg1(vids), "video viewers, average"),
     tile(avg1(auds), "audio listeners, average"), tile(avg1(rows.map(r => r.both)), "both, average"),
     tile(top ? top.both : "–", top ? `most, ${fmtShortDay(dateOnly(top.service_date))}` : "most")));
 
@@ -1020,7 +1017,7 @@ function renderViewers() {
       : el("p", { class: "hint" }, "No services in this time frame.")));
 
   const hrs = (s) => s == null ? "" : (Math.round(s / 360) / 10).toFixed(1);
-  kids.push(el("section", { class: "card" }, el("h2", {}, `${view === "all" ? "Streams" : "Services"} · ${rows.length}`),
+  kids.push(el("section", { class: "card" }, el("h2", {}, `Services · ${rows.length}`),
     rows.length ? sortTable("viewers", [
       { key: "date", label: "Date", val: r => r.run_key, cell: r => fmtShortDay(dateOnly(r.service_date)) + ", " + String(r.service_date).slice(0, 4), nowrap: true },
       { key: "svc", label: "Service", val: r => svcName(r), cell: r => svcName(r), nowrap: true },
