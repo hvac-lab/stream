@@ -11,7 +11,7 @@
     color-scheme: light;
     --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
     --grid: #e1e0d9; --border: rgba(11,11,11,0.10); --hover: rgba(11,11,11,0.04);
-    --s1:#2a78d6; --s2:#eb6834; --band: rgba(42,120,214,0.10); --both-bg: rgba(132,94,247,.08);
+    --s1:#2a78d6; --s2:#eb6834; --band: rgba(42,120,214,0.10); --both-bg: rgba(132,94,247,.08); --zero-bg: rgba(245,190,20,.24);
     --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6;   /* hymnal colors (HYMNAL_COLORS) */
     --good:#0b8a0b; --warning:#b97c00; --critical:#c62f2f; --wait:#898781;
     --goodbg: rgba(12,163,12,.09); --warnbg: rgba(250,178,25,.14); --badbg: rgba(208,59,59,.09);
@@ -21,7 +21,7 @@
       color-scheme: dark;
       --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
       --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
-      --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14); --both-bg: rgba(167,139,250,.12);
+      --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14); --both-bg: rgba(167,139,250,.12); --zero-bg: rgba(250,204,21,.20);
       --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9;
       --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
       --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
@@ -31,7 +31,7 @@
     color-scheme: dark;
     --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink-2:#c3c2b7; --muted:#898781;
     --grid:#2c2c2a; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.05);
-    --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14); --both-bg: rgba(167,139,250,.12);
+    --s1:#3987e5; --s2:#d95926; --band: rgba(57,135,229,.14); --both-bg: rgba(167,139,250,.12); --zero-bg: rgba(250,204,21,.20);
     --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9;
     --good:#2fbf4f; --warning:#e0a12a; --critical:#ef6a6a;
     --goodbg: rgba(47,191,79,.12); --warnbg: rgba(224,161,42,.14); --badbg: rgba(239,106,106,.12);
@@ -184,7 +184,7 @@
   table.data th.nc.wrap { white-space: normal; }   /* a short number heading may still wrap on a phone */
   table.data td.ctr, table.data th.ctr { text-align: center; }   /* numbers centered under their heading (Viewers) */
   table.data td.both-col, table.data th.both-col { background: var(--both-bg); }   /* Viewers: the Both column, very light purple */
-  table.data tr.zero td { background: var(--both-bg); }   /* Bible: a book or chapter not read in the time frame, the same light purple */
+  table.data tr.zero td { background: var(--zero-bg); }   /* Bible: a book or chapter not read in the time frame, yellow (purple was too faint, Russ 2026-11-10) */
   table.data td { vertical-align: middle; } table.data td.nowrap { white-space: nowrap; }
   @media (min-width: 761px) { table.data td.nowrap-wide { white-space: nowrap; } }   /* one line where there is room, wraps on a phone */
   .more { margin-top: 8px; }
@@ -949,9 +949,9 @@ function renderStats() {
         { key: "diff", label: "Different chapters", head: "Different chapters", val: r => r.diff, num: true, cell: r => r.of ? `${r.diff} of ${r.of}` : String(r.diff), nowrap: true },
         { key: "last", label: "Last read", head: "Last read", val: r => r.last, cell: r => r.last ? fmtDate(dateOnly(r.last)) : "", nowrap: "wide" },
       ], bookRows, { key: "book", dir: "asc" }, 100, { rowCls: r => r.n ? "" : "zero" }),
-      el("p", { class: "hint", style: "margin:8px 0 0" }, "Times read counts each chapter each time it was read; Different chapters counts each chapter once. Purple: not read in this time frame.")));
+      el("p", { class: "hint", style: "margin:8px 0 0" }, "Times read counts each chapter each time it was read; Different chapters counts each chapter once. Yellow: not read in this time frame.")));
   }
-  // every chapter of the Bible, read or not; the ones not read are purple (Russ, 2026-11-10)
+  // every chapter of the Bible, read or not; the ones not read are yellow (Russ, 2026-11-10)
   if (bibleView === "all") {
     const allCh = [...BOOK_ORDER.keys()].flatMap(b => Array.from({ length: BOOK_CHAPTERS[BOOK_ORDER.get(b)] }, (_, i) => `${b} ${i + 1}`));
     const known = new Set(allCh);
@@ -961,7 +961,7 @@ function renderStats() {
     });
     const unread = allRows.filter(r => !r.n).length;
     kids.push(el("section", { class: "card" }, el("h2", {}, `All chapters of the Bible · ${allRows.length.toLocaleString()}`),
-      el("p", { class: "hint", style: "margin:0 0 8px" }, `${(allRows.length - unread).toLocaleString()} read, ${unread.toLocaleString()} not read in this time frame (purple).`),
+      el("p", { class: "hint", style: "margin:0 0 8px" }, `${(allRows.length - unread).toLocaleString()} read, ${unread.toLocaleString()} not read in this time frame (yellow).`),
       sortTable("allchapters", [
         { key: "chapter", label: "Chapter", val: r => r._tie, cell: r => el("span", { class: "hy", title: isNT(r.book) ? "New Testament" : "Old Testament" },
           el("i", { style: `background:${isNT(r.book) ? "var(--s2)" : "var(--s1)"}` }), r.chapter), nowrap: true },
