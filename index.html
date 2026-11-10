@@ -106,9 +106,10 @@
   .next { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--grid); }
   .next:first-of-type { border-top: none; }
   .next .what b { display:block; } .next .what span { color: var(--muted); font-size: 13px; }
-  .next .mode { font-size: 13px; font-weight: 650; text-align: right; } .next .mode.auto { color: var(--good); } .next .mode.manual { color: var(--warning); }
+  .next .mode { grid-column: 1 / -1; font-size: 14px; font-weight: 650; text-align: center; padding: 7px; border-radius: 10px; }
+  .next .mode.auto { color: var(--good); background: var(--goodbg); } .next .mode.manual { color: var(--warning); background: var(--warnbg); }
   .next .who { grid-column: 1 / -1; font-size: 13px; color: var(--warning); margin-top: -2px; }
-  .next button { grid-column: 1 / -1; } .next .confirm { grid-column: 1 / -1; margin-top: 0; }
+  .next > button { padding: 3px 10px; font-size: 13px; font-weight: 600; white-space: nowrap; } .next .confirm { grid-column: 1 / -1; margin-top: 0; }
   /* History table: every heading sorts, a row opens to its steps and hymns */
   .tablewrap { overflow-x: auto; }
   /* headings stay at the top of the window while the rows scroll (Viewers); a scrolling box would stop that, and
@@ -497,9 +498,12 @@ function renderNow() {
   if (!state.schedule) nc.append(el("p", { class: "hint" }, "The schedule appears after the church PC's next report."));
   for (const u of next) {
     const ctl = state.control.get(u.key);
+    // small switch button top right, the mode as a wide line under it (Russ, 2026-11-10)
     const row = el("div", { class: "next" },
-      el("div", { class: "what" }, el("b", {}, `${u.svc.name} · ${fmtShortDay(u.day)}`), el("span", {}, `${fmtTime(u.start)} to ${fmtTime(u.end)}`)),
-      el("div", { class: "mode " + (ctl ? "manual" : "auto") }, ctl ? "By hand" : "Automatic"));
+      el("div", { class: "what" }, el("b", {}, `${u.svc.name} · ${fmtShortDay(u.day)}`), el("span", {}, `${fmtTime(u.start)} to ${fmtTime(u.end)}`)));
+    if (ctl) row.append(el("button", { class: "auto", disabled: state.busy, onclick: () => setManual(u.key, false) }, "Back to automatic"));
+    else if (state.asking !== u.key) row.append(el("button", { class: "manual", disabled: state.busy, onclick: () => { state.asking = u.key; state.msg = null; render(); } }, "Run by hand"));
+    row.append(el("div", { class: "mode " + (ctl ? "manual" : "auto") }, ctl ? "By hand" : "Automatic"));
     if (ctl) row.append(el("div", { class: "who" }, `Set by ${ctl.set_by} ${ago(new Date(ctl.set_at))}${ctl.note ? ` (${ctl.note})` : ""}`));
     if (state.asking === u.key) {
       const note = el("input", { type: "text", placeholder: "Reason (optional), e.g. wedding, special program" });
@@ -508,8 +512,7 @@ function renderNow() {
         el("div", { class: "row" },
           el("button", { class: "yes", disabled: state.busy, onclick: () => setManual(u.key, true, note.value.trim()) }, "Yes, run it by hand"),
           el("button", { onclick: () => { state.asking = null; render(); } }, "Cancel"))));
-    } else if (ctl) row.append(el("button", { class: "auto", disabled: state.busy, onclick: () => setManual(u.key, false) }, "Back to automatic"));
-    else row.append(el("button", { class: "manual", disabled: state.busy, onclick: () => { state.asking = u.key; state.msg = null; render(); } }, "Run by hand"));
+    }
     if (state.msg && state.msg.key === u.key) row.append(el("div", { class: "msg " + (state.msg.ok ? "ok" : "bad"), style: "grid-column:1/-1" }, state.msg.text));
     nc.append(row);
   }
