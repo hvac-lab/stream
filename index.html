@@ -44,7 +44,8 @@
   .pill { display:inline-flex; align-items:center; gap:6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--border); color: var(--ink-2); }
   .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
   .pill.ok .dot { background: var(--good); } .pill.warn .dot { background: var(--warning); } .pill.bad .dot { background: var(--critical); }
-  nav.tabs { display:flex; gap: 4px; padding: 8px 16px 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+  nav.tabs { display:flex; gap: 4px; padding: 8px 16px 0; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+  nav.tabs::-webkit-scrollbar { display: none; }   /* ten tabs for admins: a narrow window swipes the tab row, never the page */
   nav.tabs button { border: 1px solid transparent; border-bottom: none; background: none; border-radius: 10px 10px 0 0; padding: 8px 16px; font-size: 15px; color: var(--ink-2); }
   nav.tabs button.on { background: var(--page); border-color: var(--border); color: var(--ink); font-weight: 650; margin-bottom: -1px; }
   nav.tabs button .live { display:inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--s1); margin-left: 6px; vertical-align: middle; animation: blink 1.2s ease-in-out infinite; }
@@ -191,9 +192,35 @@
   .chip.copyrighted { color: var(--critical); border-color: var(--critical); background: var(--badbg); }
   .chip.public_domain { color: var(--good); border-color: var(--good); background: var(--goodbg); }
   .rightsedit { display:flex; gap: 6px; flex-wrap: wrap; align-items: center; } .rightsedit select, .rightsedit input { font-size: 14px; padding: 4px 6px; }
-  /* nine tabs fit a tablet; narrower, the tab row swipes sideways (the page itself never does) */
-  @media (max-width: 900px) { nav.tabs { overflow-x: auto; scrollbar-width: none; } nav.tabs::-webkit-scrollbar { display: none; }
-    nav.tabs button { padding: 8px 11px; white-space: nowrap; flex: 0 0 auto; } }
+  nav.tabs button { white-space: nowrap; flex: 0 0 auto; }
+  @media (max-width: 900px) { nav.tabs button { padding: 8px 11px; } }   /* nine tabs fit a tablet */
+  /* Process Map (admins): what the church PC does by itself, to show others. Kinds: --k is the box's color. */
+  .pm-intro { font-size: 15px; color: var(--ink-2); margin: 0 0 14px; }
+  .pm-legend { display:flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); margin: 0 0 12px; }
+  .pm-legend i { display:inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .pm-path { display:flex; align-items: stretch; margin: 8px 0 14px; }
+  .pm-path .lbl { flex: 0 0 62px; align-self: center; font-size: 12px; font-weight: 650; color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; }
+  .pm-node { flex: 1 1 0; min-width: 0; border: 1px solid var(--border); border-left: 4px solid var(--k); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+  .pm-node b { display:block; font-size: 14px; } .pm-node span { display:block; font-size: 12px; color: var(--muted); }
+  .pm-arrow { flex: 0 0 26px; display:flex; align-items: center; justify-content: center; color: var(--muted); font-size: 18px; }
+  .pm-arrow::before { content: "\2192"; }
+  .pm-phase { display:grid; grid-template-columns: 170px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-top: 1px solid var(--grid); }
+  .pm-phase:first-of-type { border-top: none; padding-top: 4px; }
+  .pm-when b { display:block; font-size: 15px; } .pm-when span { display:block; font-size: 13px; color: var(--muted); }
+  .pm-steps { display:grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; } .pm-steps.one { grid-template-columns: minmax(0, 1fr); }
+  .pm-steps.wide { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }   /* six steps: rows of three */
+  .pm-steps.solo { grid-template-columns: minmax(0, 540px); }   /* a phase with one step: one wide box, not a narrow tall one */
+  .pm-step { border: 1px solid var(--border); border-left: 4px solid var(--k); border-radius: 10px; padding: 9px 11px; display:grid; grid-template-columns: 26px minmax(0, 1fr); gap: 0 9px; align-content: start; }
+  .pm-step .n { width: 26px; height: 26px; border-radius: 50%; background: var(--k); color: #fff; font-weight: 700; font-size: 13px; display:flex; align-items: center; justify-content: center; }
+  .pm-step b { font-size: 14px; line-height: 1.3; align-self: center; } .pm-step p { grid-column: 2; margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
+  .pm-step.plain { grid-template-columns: minmax(0, 1fr); } .pm-step.plain p, .pm-step.plain .pm-tools { grid-column: 1; }
+  .pm-tools { grid-column: 2; display:flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+  .pm-tools span { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; }
+  @media (max-width: 760px) {
+    .pm-path { flex-direction: column; } .pm-path .lbl { flex-basis: auto; align-self: flex-start; margin-bottom: 4px; }
+    .pm-arrow { flex-basis: 22px; } .pm-arrow::before { content: "\2193"; }
+    .pm-phase { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  }
   @media (max-width: 760px) { .two { grid-template-columns: 1fr; gap: 4px; } .grid2 { grid-template-columns: minmax(0, 1fr); } }
   @media (max-width: 600px) { header { padding: 8px 12px; gap: 8px; } header h1 { font-size: 16px; } main { padding: 10px; }
     #who { display: none; } .pill { font-size: 11px; padding: 2px 8px; } header button { padding: 4px 8px; font-size: 13px; }
@@ -246,7 +273,7 @@ const demo = params.get("demo") === "1";
 const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
 // Ministers, Hymns and Bible were the three pages of one Stats tab until 2026-11-10 (Russ)
-const TABS = [["now", "Now"], ["history", "History"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["tests", "Tests"], ["admin", "Admin"]];
+const TABS = [["now", "Now"], ["history", "History"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
 const STATS_TABS = { ministers: "minister", hymns: "hymn", bible: "readings" };
 const DATA_TABS = [...Object.keys(STATS_TABS), "copyright", "viewers"];   // need loadStats()
 const oldTab = (t) => t === "stats" ? ({ hymn: "hymns", readings: "bible" }[store.get("statsView", "")] || "ministers") : t;
@@ -474,7 +501,7 @@ function runCard(run, title, opts = {}) {
 // ------------------------------------------------------------------ tabs
 function renderTabs() {
   const nav = $("#tabs"); nav.style.display = ""; nav.replaceChildren();
-  const adminOnly = ["tests", "admin"];   // Russ, 2026-11-09: Tests and Admin only for admins
+  const adminOnly = ["map", "tests", "admin"];   // Russ, 2026-11-09: Tests and Admin only for admins; Process Map too (2026-11-10)
   if (!TABS.some(([k]) => k === state.tab) || (adminOnly.includes(state.tab) && !state.admin)) state.tab = "now";
   const testLive = state.tests.some(r => overall(r).cls === "running") || state.requests.some(q => q.status === "pending" || q.status === "running");
   for (const [k, label] of TABS) {
@@ -486,11 +513,12 @@ function renderTabs() {
 }
 function render() {
   setPc(); renderTabs();
-  main.className = ["history", "copyright", ...Object.keys(STATS_TABS)].includes(state.tab) ? "" : "narrow";
+  main.className = ["history", "copyright", "map", ...Object.keys(STATS_TABS)].includes(state.tab) ? "" : "narrow";
   if (state.tab === "history") return renderHistory();
   if (STATS_TABS[state.tab]) return renderStats();
   if (state.tab === "copyright") return renderCopyright();
   if (state.tab === "viewers") return renderViewers();
+  if (state.tab === "map") return renderProcessMap();
   if (state.tab === "tests") return renderTests();
   if (state.tab === "admin") return renderAdmin();
   return renderNow();
@@ -574,6 +602,71 @@ function renderHistory() {
                 : el("p", { class: "hint" }, "No services yet."),
     el("p", { class: "hint", style: "margin:10px 0 0" }, "PASS = the sermon is on Vimeo and AC Central. Click a heading to sort, a row to see all steps and hymns."));
   screen(card);
+}
+
+// ------------------------------------------------------------------ Process Map (admins)
+// What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
+// a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
+// and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
+const MAP_UPDATED = "2026-11-10";
+function renderProcessMap() {
+  const K = { gear: "var(--muted)", pc: "var(--s1)", online: "var(--s3)", people: "var(--s7)", hand: "var(--s4)" };
+  const node = (k, title, sub) => el("div", { class: "pm-node", style: `--k:${K[k]}` }, el("b", {}, title), sub ? el("span", {}, sub) : null);
+  const path = (label, ...nodes) => el("div", { class: "pm-path" }, el("div", { class: "lbl" }, label),
+    ...nodes.flatMap((n, i) => i ? [el("div", { class: "pm-arrow", "aria-hidden": "true" }), n] : [n]));
+  const step = (n, title, text, tools = [], k = "pc") => el("div", { class: "pm-step" + (n ? "" : " plain"), style: `--k:${K[k]}` },
+    n ? el("span", { class: "n" }, String(n)) : null, el("b", {}, title), el("p", {}, text),
+    tools.length ? el("div", { class: "pm-tools" }, ...tools.map(t => el("span", {}, t))) : null);
+  const phase = (when, sub, ...steps) => el("div", { class: "pm-phase" }, el("div", { class: "pm-when" }, el("b", {}, when), ...[].concat(sub).map(s => el("span", {}, s))),
+    el("div", { class: "pm-steps" + (steps.length === 1 ? " solo" : steps.length > 4 ? " wide" : "") }, ...steps));
+  const legend = el("div", { class: "pm-legend" }, ...[["gear", "Church equipment"], ["pc", "Church PC, automatic"], ["online", "Online service"],
+    ["people", "Congregation"], ["hand", "A person, only if needed"]].map(([k, t]) => el("span", {}, el("i", { style: `background:${K[k]}` }), t)));
+
+  // times from the schedule the PC reports (config\schedule.json), so the map follows a change there
+  const svcs = (state.schedule?.services || []).filter(s => s.enabled);
+  const t = (hhmm) => fmtTime(atTime(new Date(), hhmm));
+  const nth = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th" };
+  const short = { SunAM: "Sun AM", SunPM: "Sun PM", WedPM: "Wed" };
+  const svcName = (s) => (short[s.id] || s.name) + (s.weeksOfMonth ? ` (${s.weeksOfMonth.map(w => nth[w] || w).join(" & ")})` : "");
+  const list = (key) => svcs.map(s => `${svcName(s)} ${t(s[key])}`);   // one line per service
+
+  screen(
+    el("p", { class: "pm-intro" }, "What the church PC does by itself for every Sunday morning, Sunday afternoon and 1st & 3rd Wednesday service, from turning on the stream to the sermon being on AC Central. No one has to be at the PC."),
+    legend,
+    el("section", { class: "card" }, el("h2", {}, "Live stream: how the sound and picture reach the congregation"),
+      path("Video", node("gear", "Sanctuary camera + mic"), node("pc", "OBS Studio", "streams and records"), node("online", "Vimeo live event", "carries the video"), node("people", "AC Central app & website", "watch live")),
+      path("Audio", node("gear", "Sanctuary mic"), node("pc", "Rocket Broadcaster", "streams the sound"), node("online", "Radio Mast", "carries the audio"), node("people", "AC Central app", "listen live")),
+      el("p", { class: "hint", style: "margin:0" }, "The PC checks both paths from the outside too, the way a viewer would see and hear them.")),
+    el("section", { class: "card" }, el("h2", {}, "One service, start to finish"),
+      phase("Before", ["3 minutes before the service", ...list("start")],
+        step(1, "Automatic start", "A scheduled task on the church PC starts the service. It checks the Sanctuary camera, mic and internet first.", ["Windows scheduler"]),
+        step(2, "Video streaming", "OBS starts the live video to the Vimeo live event behind AC Central's player.", ["OBS", "Vimeo"]),
+        step(3, "Recording", "OBS records the full-quality video at the same time, for the archive.", ["OBS"]),
+        step(4, "Audio streaming", "Rocket Broadcaster starts 3 minutes later and sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
+      phase("During", ["6 minutes in", ...list("check")],
+        step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound; the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"])),
+      phase("Cutoff", ["at the set time, or Stop Stream Now", ...list("cutoff")],
+        step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing.", ["OBS", "Rocket Broadcaster"])),
+      phase("After", "about 30 to 40 minutes, no one needed",
+        step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns.", ["Church PC only"]),
+        step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
+        step(9, "Video uploaded to Vimeo", "Uploads the trimmed video, unlisted, to the Morris North folder.", ["Vimeo"]),
+        step(10, "Sermon entry on AC Central", "Adds the sermon: date, service, minister, readings, the audio file and the video link.", ["AC Central"]),
+        step(11, "Google Sheet updated", "Adds the sermon and its hymns to the “Morris North Sermons” sheet.", ["Google Sheet"]),
+        step(12, "Report emailed", "Sends a summary of the service and its checks by email and to a phone.", ["Email", "Phone"])),
+      el("p", { class: "hint", style: "margin:4px 0 0" }, "Each step shows on the Now tab as it happens; the History tab keeps every service.")),
+    el("div", { class: "grid2" },
+      el("section", { class: "card" }, el("h2", {}, "Every day, in the background"),
+        el("div", { class: "pm-steps one" },
+          step(null, "Status page", "Every minute the PC tells this page it is on and picks up any change made here.", ["This page"]),
+          step(null, "Numbers for the tabs", "Once a day: AC Central's sermon list since 2015, the hymns and the viewer counts from Vimeo and Radio Mast, for Ministers, Hymns, Bible, Copyright and Viewers.", ["AC Central", "Vimeo", "Radio Mast"]),
+          step(null, "Tests", "An admin can rehearse a past service from the Tests tab; nothing is published.", ["Tests tab"]))),
+      el("section", { class: "card" }, el("h2", {}, "When a person steps in"),
+        el("div", { class: "pm-steps one" },
+          step(null, "Run by hand", "For a wedding, funeral or special program, set the service to run by hand on the Now tab; the PC leaves it alone.", ["Now tab"], "hand"),
+          step(null, "Visiting minister", "A voice the PC does not know is entered as “Visiting Minister”; the name is fixed on AC Central afterwards.", ["AC Central"], "hand"),
+          step(null, "Sign-in expired", "Vimeo signs in again through the church Google account by itself; if Google asks for a password, someone signs in once on the PC.", ["Vimeo"], "hand")))),
+    el("p", { class: "hint", style: "text-align:center" }, `Map updated ${fmtDate(parseYmd(MAP_UPDATED))} · only admins see this tab`));
 }
 
 // ------------------------------------------------------------------ Tests
