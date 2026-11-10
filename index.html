@@ -161,6 +161,10 @@
   .bar .bl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
   .bar .bt { height: 16px; } .bar .bf { display:block; height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
   .bar .bv { font-variant-numeric: tabular-nums; font-weight: 650; text-align: right; }
+  .cols { display:flex; align-items:stretch; gap: 2px; height: 170px; border-bottom: 1px solid var(--grid); }
+  .cols .c { flex: 1 1 0; min-width: 0; display:flex; flex-direction: column-reverse; gap: 2px; cursor: default; }
+  .cols .c:hover { background: var(--hover); } .cols .c i { display:block; min-height: 0; } .cols .c i:last-child { border-radius: 4px 4px 0 0; }
+  .colx { display:flex; gap: 2px; margin-top: 4px; } .colx span { flex: 1 1 0; min-width: 0; font-size: 11px; color: var(--muted); text-align: center; white-space: nowrap; overflow: visible; }
   .hy i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   .legend { display:flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px; } .legend i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   table.data td.nc, table.data th.nc { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -223,7 +227,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k);
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
 const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
-                sermons: null, hymns: null, rights: new Map(), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
+                sermons: null, hymns: null, rights: new Map(), viewers: [], vwView: store.get("vwView", "services"), statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
                 frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
@@ -452,7 +456,7 @@ function renderTabs() {
   for (const [k, label] of TABS) {
     if (adminOnly.includes(k) && !state.admin) continue;
     nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); window.scrollTo(0, 0);
-        if (["stats", "copyright"].includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
+        if (["stats", "copyright", "viewers"].includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
       label, k === "tests" && testLive ? el("span", { class: "live", title: "a test is running" }) : null));
   }
 }
@@ -617,12 +621,13 @@ async function fetchAll(table, cols, order) {
 }
 async function loadStats() {
   if (demo) { await demoLoad(); state.statsAt = Date.now(); return; }
-  const [s, h, r] = await Promise.all([
+  const [s, h, r, v] = await Promise.all([
     fetchAll("stream_sermons", "id,sermon_date,service,speaker,chapters", "sermon_date"),
     fetchAll("stream_hymns", "run_key,seq,sung_date,service_id,service_name,sung_time,number,hymnal,title,how,media", "sung_date"),
     fetchAll("stream_hymn_rights", "hymnal,number,title,status,ccli,note,updated_by,updated_at", "updated_at"),
+    fetchAll("stream_viewers", "run_key,service_date,service_id,started_at,ended_at,sessions,video_peak,video_plays,video_seconds,audio_peak,audio_hours", "service_date"),
   ]);
-  state.sermons = s; state.hymns = h; state.rights = new Map(r.map(x => [`${x.hymnal}|${x.number}`, x])); state.statsAt = Date.now();
+  state.sermons = s; state.hymns = h; state.rights = new Map(r.map(x => [`${x.hymnal}|${x.number}`, x])); state.viewers = v; state.statsAt = Date.now();
 }
 // canonical order, for sorting chapters and telling Old from New Testament
 const BOOKS_NT = ["Matthew", "Mark", "Luke", "John", "Acts", "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians", "Philippians", "Colossians",
@@ -952,12 +957,89 @@ function renderCopyright() {
 }
 
 // ------------------------------------------------------------------ Viewers
-// Placeholder (Russ, 2026-11-09): viewers per service for the video stream (AC Central / Vimeo) and the audio
-// stream (Rocket Broadcaster / Radio Mast). Russ will show where the numbers come from; nothing is collected yet.
+// stream_viewers, one row per streamed service (scripts\Sync-StreamData.ps1, 2026-11-10; sources shown by Russ):
+// video = the Vimeo live event behind the AC Central player (Vimeo's own "most viewers at one time", plays, time
+// watched; since June 2022); audio = the Radio Mast stream from Rocket Broadcaster (the highest hourly peak of
+// listeners during the service, listener-hours). "Both" adds the two peaks: the most people on either stream.
+const avg1 = (xs) => xs.length ? Math.round(xs.reduce((a, x) => a + x, 0) / xs.length * 10) / 10 : "–";
+function viewerMonths(rows, from, to) {
+  const m = new Map();
+  for (const r of rows) {
+    const k = String(r.service_date).slice(0, 7), e = m.get(k) || { n: 0, v: [], a: [] };
+    e.n++; if (r.video_peak != null) e.v.push(r.video_peak); if (r.audio_peak != null) e.a.push(r.audio_peak); m.set(k, e);
+  }
+  // every month of the time frame, so a month without services shows as a gap
+  const out = [], d = parseYmd(String(from || [...m.keys()].sort()[0] || ymd(new Date())).slice(0, 7) + "-01"), end = String(to).slice(0, 7);
+  for (; ymd(d).slice(0, 7) <= end && out.length < 600; d.setMonth(d.getMonth() + 1)) {
+    const k = ymd(d).slice(0, 7), e = m.get(k) || { n: 0, v: [], a: [] };
+    out.push({ k, n: e.n, v: e.v.length ? avg1(e.v) : 0, a: e.a.length ? avg1(e.a) : 0 });
+  }
+  return out;
+}
 function renderViewers() {
-  screen(el("section", { class: "card" }, el("h2", {}, "Viewers"),
-    el("p", {}, "Coming soon: how many people watched the video stream and listened to the audio stream, for each service."),
-    el("p", { class: "hint", style: "margin:0" }, "Not collected yet. Russ will show where these numbers come from, then this page will list them by service with totals.")));
+  if (!state.sermons) return loadingCard();
+  const all = state.viewers || [];
+  const view = state.vwView === "all" ? "all" : "services";
+  const first = all.reduce((a, v) => !a || v.service_date < a ? v.service_date : a, "");
+  const { from, to } = frameRange(String(first).slice(0, 10));
+  const rows = all.filter(v => { const d = String(v.service_date).slice(0, 10); return d >= from && d <= to && (view === "all" || v.service_id !== "Other"); })
+    .map(v => ({ ...v, both: (v.video_peak || 0) + (v.audio_peak || 0), _tie: 0 }));
+  const svcName = (r) => r.service_id === "Other" ? `Other${r.started_at ? ", " + fmtTime(new Date(r.started_at)) : ""}` : (SVC_WORD[r.service_id] || r.service_id);
+
+  const viewBtns = el("div", { class: "seg" }, ...[["services", "Services"], ["all", "All streams"]].map(([k, label]) =>
+    el("button", { class: view === k ? "on" : "", title: k === "all" ? "Also funerals, weddings and other streams outside the service times" : "Sunday AM, Sunday PM and Wednesday",
+      onclick: () => { state.vwView = k; store.set("vwView", k); render(); } }, label)));
+  const frameBtns = el("div", { class: "seg" }, ...FRAMES.map(([k, label]) =>
+    el("button", { class: state.frame === k ? "on" : "", onclick: () => { state.frame = k; store.set("frame", k); render(); } }, label)));
+  const setDates = (f, t) => { state.frame = "custom"; state.frameDates = { from: f, to: t }; store.set("frame", "custom"); store.set("frameDates", state.frameDates); render(); };
+  const kids = [el("div", { class: "toolbar" }, viewBtns, frameBtns),
+    el("div", { class: "toolbar", style: "margin-top:-6px" }, el("label", {}, "From", el("input", { type: "date", value: from, onchange: (e) => setDates(e.target.value, to) })),
+      el("label", {}, "To", el("input", { type: "date", value: to, onchange: (e) => setDates(from, e.target.value) })),
+      el("span", { class: "hint" }, from ? `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}` : ""))];
+
+  const vids = rows.filter(r => r.video_peak != null).map(r => r.video_peak), auds = rows.filter(r => r.audio_peak != null).map(r => r.audio_peak);
+  const top = rows.reduce((a, r) => !a || r.both > a.both ? r : a, null);
+  kids.push(el("div", { class: "tiles" }, tile(rows.length, view === "all" ? "streams" : "services"), tile(avg1(vids), "video viewers, average"),
+    tile(avg1(auds), "audio listeners, average"), tile(avg1(rows.map(r => r.both)), "both, average"),
+    tile(top ? top.both : "–", top ? `most, ${fmtShortDay(dateOnly(top.service_date))}` : "most")));
+
+  // monthly averages, video below and audio on top (one column per month)
+  const months = viewerMonths(rows, from, to);
+  const max = Math.max(1, ...months.map(m => m.v + m.a));
+  const every = months.length > 30 ? 12 : months.length > 14 ? 3 : 1;
+  const mName = (k) => parseYmd(k + "-01").toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  kids.push(el("section", { class: "card" }, el("h2", {}, "Average per service, by month"),
+    el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:var(--s1)" }), "Video viewers (Vimeo / AC Central)"),
+      el("span", {}, el("i", { style: "background:var(--s2)" }), "Audio listeners (Radio Mast)")),
+    months.length ? el("div", {},
+      el("div", { class: "cols", role: "img", "aria-label": months.map(m => `${mName(m.k)}: video ${m.v}, audio ${m.a}`).join("; ") },
+        ...months.map(m => el("div", { class: "c", title: m.n ? `${mName(m.k)}: ${m.n} ${m.n === 1 ? "service" : "services"}, on average ${m.v} video viewers and ${m.a} audio listeners at the most` : `${mName(m.k)}: no services` },
+          el("i", { style: `height:${(m.v / max * 100).toFixed(1)}%;background:var(--s1)` }), el("i", { style: `height:${(m.a / max * 100).toFixed(1)}%;background:var(--s2)` })))),
+      el("div", { class: "colx" }, ...months.map((m, i) => el("span", {}, i % every === 0 ? (every === 12 ? m.k.slice(0, 4) : parseYmd(m.k + "-01").toLocaleDateString("en-US", { month: "short" })) : ""))),
+      el("p", { class: "hint", style: "margin:8px 0 0" }, `Highest monthly average: ${Math.round(max * 10) / 10} people on the two streams together. Hover a column for its numbers.`))
+      : el("p", { class: "hint" }, "No services in this time frame.")));
+
+  const hrs = (s) => s == null ? "" : (Math.round(s / 360) / 10).toFixed(1);
+  kids.push(el("section", { class: "card" }, el("h2", {}, `${view === "all" ? "Streams" : "Services"} · ${rows.length}`),
+    rows.length ? sortTable("viewers", [
+      { key: "date", label: "Date", val: r => r.run_key, cell: r => fmtShortDay(dateOnly(r.service_date)) + ", " + String(r.service_date).slice(0, 4), nowrap: true },
+      { key: "svc", label: "Service", val: r => svcName(r), cell: r => svcName(r), nowrap: true },
+      { key: "video", label: "Video", val: r => r.video_peak ?? -1, num: true, cell: r => r.video_peak == null ? el("span", { class: "hint", title: "No Vimeo stream for this service" }, "none") : String(r.video_peak) },
+      { key: "audio", label: "Audio", val: r => r.audio_peak ?? -1, num: true, cell: r => r.audio_peak == null ? el("span", { class: "hint" }, "–") : String(r.audio_peak) },
+      { key: "both", label: "Both", val: r => r.both, num: true },
+      { key: "plays", label: "Video plays", val: r => r.video_plays ?? -1, num: true, cls: "opt-col", cell: r => r.video_plays == null ? "" : String(r.video_plays) },
+      { key: "vh", label: "Video hours watched", val: r => r.video_seconds ?? -1, num: true, cls: "opt-col", cell: r => hrs(r.video_seconds) },
+      { key: "ah", label: "Audio listener-hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1) },
+    ], rows, { key: "date", dir: "desc" }, 30) : el("p", { class: "hint" }, "No services in this time frame."),
+    rows.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`viewers-${from}-to-${to}.csv`,
+      ["Date", "Service", "Video viewers (most at once)", "Audio listeners (most at once)", "Both", "Video plays", "Video hours watched", "Audio listener-hours", "Vimeo sessions"],
+      [...rows].sort((a, b) => a.run_key < b.run_key ? -1 : 1).map(r => [String(r.service_date).slice(0, 10), svcName(r), r.video_peak ?? "", r.audio_peak ?? "", r.both,
+        r.video_plays ?? "", hrs(r.video_seconds), r.audio_hours ?? "", r.sessions])) }, "Download as a spreadsheet (CSV)") : null));
+  kids.push(el("p", { class: "hint", style: "text-align:center" },
+    "Video: Vimeo's count of the most people watching at one time (the AC Central player plays the Vimeo stream). ",
+    "Audio: Radio Mast's highest hourly peak of listeners during the service. Both: the two added together. ",
+    `Updated after each service and once a day${first ? `; numbers since ${fmtDate(dateOnly(first))}` : ""}.`));
+  screen(...kids);
 }
 
 // ------------------------------------------------------------------ Admin (same as the HVAC page's Admin tab)
@@ -1032,7 +1114,7 @@ async function refresh() {
   clearTimeout(state.timer);
   try {
     await load();
-    const statsTab = ["stats", "copyright"].includes(state.tab);
+    const statsTab = ["stats", "copyright", "viewers"].includes(state.tab);
     if (statsTab && (!state.sermons || Date.now() - state.statsAt > 10 * 60e3)) { await loadStats(); if (state.crEdit === null) render(); }
     // do not redraw under an open confirmation, a form being filled in, the admin list or the stats being looked at
     if (!state.asking && state.tab !== "admin" && !statsTab && !(document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName))) render();
@@ -1087,6 +1169,7 @@ async function demoLoad() {
     state.runs = all.filter(r => !r.is_test); state.tests = all.filter(r => r.is_test); state.requests = s.requests || [];
     state.schedule = s.schedule || null; state.users = s.users || []; state.pcSeen = new Date(Date.now() - 30e3);
     state.sermons = s.sermons || []; state.hymns = s.hymns || []; state.rights = new Map((s.rights || []).map(x => [`${x.hymnal}|${x.number}`, x]));
+    state.viewers = s.viewers || [];
     state.control = new Map((s.control || []).map(c => [c.run_key, c]));
     if (params.get("live") === "1") state.demoTick = async () => { try { const s2 = await (await fetch(params.get("data"), { cache: "no-store" })).json();
       const a2 = s2.runs || []; state.runs = a2.filter(r => !r.is_test); state.tests = a2.filter(r => r.is_test); state.requests = s2.requests || []; } catch {} };
@@ -1132,6 +1215,9 @@ async function demoLoad() {
   state.rights = new Map([["Hymns of Zion|302", { hymnal: "Hymns of Zion", number: "302", title: "How Great Thou Art", status: "copyrighted", ccli: "14181", note: "Stuart K. Hine" }],
     ["Hymns of Zion|397", { hymnal: "Hymns of Zion", number: "397", title: "Higher Ground", status: "copyrighted", ccli: "21844", note: "Johnson Oatman" }],
     ["Hymns of Zion|5", { hymnal: "Hymns of Zion", number: "5", status: "public_domain", note: "1833" }]]);
+  state.viewers = Array.from({ length: 160 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - Math.floor(i / 2) * 7 - (i % 2 ? 0 : 3)); const sid = i % 2 ? ["SunAM", "SunPM"][Math.floor(i / 2) % 2] : "WedPM";
+    return { run_key: `${ymd(d)}_${sid}`, service_date: ymd(d), service_id: sid, sessions: 1, video_peak: i % 23 === 5 ? null : 2 + (i * 7) % 5, video_plays: 6 + (i * 5) % 14, video_seconds: 2400 + (i * 977) % 9000,
+      audio_peak: 2 + (i * 3) % 6, audio_hours: ((i * 13) % 60) / 10 }; });
   state.users = [{ email: "russ.koehl@morrisnorth.org", note: "Russ", is_admin: true, added_at: "2026-11-09T15:00:00Z", added_by: "copied from the HVAC list" },
                  { email: "someone@example.org", note: "Sound booth", is_admin: false, added_at: "2026-11-09T16:00:00Z", added_by: "russ.koehl@morrisnorth.org" }];
   // a quick test plays itself, one step every 3 s
