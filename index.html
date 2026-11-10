@@ -897,13 +897,15 @@ function renderStats() {
     el("button", { class: state.frame === k ? "on" : "", onclick: () => { state.frame = k; store.set("frame", k); render(); } }, label)));
 
   // chapters (no verses), books, ministers
-  const ch = new Map(), books = new Map(), min = new Map();
+  const ch = new Map(), books = new Map(), bookLast = new Map(), min = new Map();
   for (const s of sermons) {
     for (const c of (s.chapters || [])) {
-      const e = ch.get(c) || { chapter: c, book: bookOf(c), n: 0, last: "", by: new Map() };
+      const b = bookOf(c); books.set(b, (books.get(b) || 0) + 1);
+      if (s.sermon_date > (bookLast.get(b) || "")) bookLast.set(b, s.sermon_date);
+      if (!/\d$/.test(c)) continue;   // entered on AC Central without a chapter number: counts for the book only
+      const e = ch.get(c) || { chapter: c, book: b, n: 0, last: "", by: new Map() };
       e.n++; if (s.sermon_date > e.last) e.last = s.sermon_date; if (s.speaker) e.by.set(s.speaker, (e.by.get(s.speaker) || 0) + 1);
       ch.set(c, e);
-      const b = bookOf(c); books.set(b, (books.get(b) || 0) + 1);
     }
     if (!s.speaker) continue;   // no minister (a funeral or event entry): counts for readings only
     const who = s.speaker;
@@ -982,7 +984,7 @@ function renderStats() {
       `Hymns are known from the automatic analysis${firstHymn ? `, since ${fmtDate(dateOnly(firstHymn))}` : ""}; singing nobody announced is not counted.`));
     return screen(...kids);
   }
-  kids.push(el("div", { class: "tiles" }, tile(sermons.length, "sermons"), tile([...books.values()].reduce((a, n) => a + n, 0), "chapters read"),
+  kids.push(el("div", { class: "tiles" }, tile(sermons.length, "sermons"), tile([...ch.values()].reduce((a, e) => a + e.n, 0), "chapters read"),
     tile(chRows.length, "different chapters"), tile(books.size, "books")));
 
   // Bible chapters
@@ -993,7 +995,7 @@ function renderStats() {
   const bookRows = [...BOOK_ORDER.keys(), ...[...books.keys()].filter(b => !BOOK_ORDER.has(b))].map(b => {
     const mine = chRows.filter(e => e.book === b);
     return { book: b, n: books.get(b) || 0, diff: mine.length, of: BOOK_CHAPTERS[BOOK_ORDER.get(b)] || 0,
-      last: mine.reduce((a, e) => e.last > a ? e.last : a, ""), _tie: BOOK_ORDER.get(b) ?? 99 };
+      last: bookLast.get(b) || "", _tie: BOOK_ORDER.get(b) ?? 99 };
   });
   const toggleBooks = el("button", { class: "small more", "aria-expanded": String(state.booksOpen),
     onclick: () => { state.booksOpen = !state.booksOpen; store.set("booksOpen", state.booksOpen); render(); } },
