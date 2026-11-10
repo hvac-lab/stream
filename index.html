@@ -985,7 +985,9 @@ function renderStats() {
     return screen(...kids);
   }
   kids.push(el("div", { class: "tiles" }, tile(sermons.length, "sermons"), tile([...ch.values()].reduce((a, e) => a + e.n, 0), "chapters read"),
-    tile(chRows.length, "different chapters"), tile(books.size, "books")));
+    tile(chRows.length, "different chapters"),
+    // books read, and what share of the 66 that is (Russ, 2026-11-10: "46 - xx%")
+    tile(`${books.size} – ${Math.round([...books.keys()].filter(b => BOOK_ORDER.has(b)).length / 66 * 100)}%`, "of the 66 books")));
 
   // Bible chapters
   const topCh = [...chRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
