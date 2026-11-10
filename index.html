@@ -111,6 +111,11 @@
   .next button { grid-column: 1 / -1; } .next .confirm { grid-column: 1 / -1; margin-top: 0; }
   /* History table: every heading sorts, a row opens to its steps and hymns */
   .tablewrap { overflow-x: auto; }
+  /* headings stay at the top of the window while the rows scroll (Viewers); a scrolling box would stop that, and
+     that table fits without sideways scrolling */
+  .tablewrap.sticky { overflow: visible; }
+  .tablewrap.sticky th { position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: inset 0 -1px 0 var(--grid); }
+  .tablewrap.sticky th.both-col { background: linear-gradient(var(--both-bg), var(--both-bg)), var(--surface); }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
   th { font-size: 12px; color: var(--ink-2); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
@@ -662,7 +667,7 @@ function inFrame(dateStr) {
 }
 
 // A table whose every heading sorts (numbers start high-to-low, words A-Z); long tables show 25 rows until "Show all".
-function sortTable(id, cols, rows, def, limit = 25) {
+function sortTable(id, cols, rows, def, limit = 25, opts = {}) {
   const st = state.sorts[id] || def;
   const col = cols.find(c => c.key === st.key) || cols[0];
   const dir = st.dir === "asc" ? 1 : -1;
@@ -674,7 +679,7 @@ function sortTable(id, cols, rows, def, limit = 25) {
     title: "Sort by " + c.label.toLowerCase(),
     onclick: () => { state.sorts[id] = { key: c.key, dir: c.key === col.key ? (st.dir === "desc" ? "asc" : "desc") : (c.num ? "desc" : "asc") }; store.set("sorts2", state.sorts); render(); } }, c.head || c.label)));
   const body = el("tbody", {}, ...shown.map(r => el("tr", {}, ...cols.map(c => el("td", { class: [c.num ? "nc" : "", c.cls || "", c.nowrap ? (c.nowrap === "wide" ? "nowrap-wide" : "nowrap") : ""].join(" ").trim() || null }, c.cell ? c.cell(r) : String(c.val(r) ?? ""))))));
-  const box = el("div", {}, el("div", { class: "tablewrap" }, el("table", { class: "data" }, el("thead", {}, head), body)));
+  const box = el("div", {}, el("div", { class: "tablewrap" + (opts.sticky ? " sticky" : "") }, el("table", { class: "data" }, el("thead", {}, head), body)));
   if (sorted.length > limit) box.append(el("button", { class: "small more", onclick: () => { if (all) state.showAll.delete(id); else state.showAll.add(id); render(); } },
     all ? "Show fewer" : `Show all ${sorted.length}`));
   return box;
@@ -1032,7 +1037,7 @@ function renderViewers() {
       { key: "plays", label: "Video plays", head: "Video plays", val: r => r.video_plays ?? -1, num: true, cls: "opt-col ctr", cell: r => r.video_plays == null ? "" : String(r.video_plays) },
       { key: "vh", label: "Video hours watched", head: "Video hours", val: r => r.video_seconds ?? -1, num: true, cls: "opt-col ctr", cell: r => hrs(r.video_seconds) },
       { key: "ah", label: "Audio listener-hours", head: "Audio hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col ctr", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1) },
-    ], rows, { key: "date", dir: "desc" }, 30) : el("p", { class: "hint" }, "No services in this time frame."),
+    ], rows, { key: "date", dir: "desc" }, 30, { sticky: true }) : el("p", { class: "hint" }, "No services in this time frame."),
     rows.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`viewers-${from}-to-${to}.csv`,
       ["Date", "Service", "Video viewers (most at once)", "Audio listeners (most at once)", "Both", "Video plays", "Video hours watched", "Audio listener-hours", "Vimeo sessions"],
       [...rows].sort((a, b) => a.run_key < b.run_key ? -1 : 1).map(r => [String(r.service_date).slice(0, 10), svcName(r), r.video_peak ?? "", r.audio_peak ?? "", r.both,
