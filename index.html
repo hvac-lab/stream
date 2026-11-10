@@ -175,6 +175,7 @@
   .hy i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   .legend { display:flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin: 0 0 8px; } .legend i { display:inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   table.data td.nc, table.data th.nc { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.data th.nc.wrap { white-space: normal; }   /* a short number heading may still wrap on a phone */
   table.data td.ctr, table.data th.ctr { text-align: center; }   /* numbers centered under their heading (Viewers) */
   table.data td.both-col, table.data th.both-col { background: var(--both-bg); }   /* Viewers: the Both column, very light purple */
   table.data td { vertical-align: middle; } table.data td.nowrap { white-space: nowrap; }
@@ -238,7 +239,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k);
 const TABS = [["now", "Now"], ["history", "History"], ["stats", "Stats"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["tests", "Tests"], ["admin", "Admin"]];
 const state = { sb: null, user: null, admin: false, tab: store.get("tab", "now"),
                 sermons: null, hymns: null, rights: new Map(), viewers: [], statsAt: 0, sorts: store.get("sorts2", {}), showAll: new Set(),
-                frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), statsView: store.get("statsView", "minister"), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
+                frame: store.get("frame", "2026"), frameDates: store.get("frameDates", { from: "", to: "" }), statsView: store.get("statsView", "minister"), booksOpen: store.get("booksOpen", false), cr: store.get("cr2", { preset: "year", from: "", to: "", which: "only" }), crView: store.get("crView", "report"), crEdit: null, crMsg: null,
                 runs: [], tests: [], requests: [], users: [], control: new Map(), schedule: null, pcSeen: null, timer: null,
                 asking: null, busy: false, msg: null, openHist: new Set(), sort: store.get("sort", { key: "date", dir: "desc" }),
                 testSource: null, testMode: "quick", testMsg: null };
@@ -648,6 +649,9 @@ const BOOKS_OT = ["Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "J
   "2 Chronicles", "Ezra", "Nehemiah", "Esther", "Job", "Psalms", "Proverbs", "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel",
   "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi"];
 const BOOK_ORDER = new Map([...BOOKS_OT, ...BOOKS_NT].map((b, i) => [b, i]));
+// chapters in each book, same order (OT then NT), for "3 of 50" in the all-books table
+const BOOK_CHAPTERS = [50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31, 12, 8, 66, 52, 5, 48, 12, 14, 3, 9, 1, 4, 7, 3, 3, 3, 2, 14, 4,
+  28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5, 3, 6, 4, 3, 1, 13, 5, 5, 3, 5, 1, 1, 1, 22];
 const bookOf = (ch) => ch.replace(/\s+\d+$/, "");
 const isNT = (book) => BOOKS_NT.includes(book);
 const chapterSortKey = (ch) => { const b = bookOf(ch); const n = parseInt(ch.slice(b.length), 10) || 0; return (BOOK_ORDER.has(b) ? BOOK_ORDER.get(b) : 99) * 1000 + n; };
@@ -813,12 +817,34 @@ function renderStats() {
   const topCh = [...chRows].sort((a, b) => b.n - a.n || a._tie - b._tie).slice(0, 15);
   const topBooks = [...books.entries()].map(([b, n]) => ({ b, n })).sort((a, b) => b.n - a.n || (BOOK_ORDER.get(a.b) ?? 99) - (BOOK_ORDER.get(b.b) ?? 99)).slice(0, 15);
   const legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:var(--s1)" }), "Old Testament"), el("span", {}, el("i", { style: "background:var(--s2)" }), "New Testament"));
+  // every book of the Bible, read or not, opened from under "Readings by book" (Russ, 2026-11-10)
+  const bookRows = [...BOOK_ORDER.keys(), ...[...books.keys()].filter(b => !BOOK_ORDER.has(b))].map(b => {
+    const mine = chRows.filter(e => e.book === b);
+    return { book: b, n: books.get(b) || 0, diff: mine.length, of: BOOK_CHAPTERS[BOOK_ORDER.get(b)] || 0,
+      last: mine.reduce((a, e) => e.last > a ? e.last : a, ""), _tie: BOOK_ORDER.get(b) ?? 99 };
+  });
+  const toggleBooks = el("button", { class: "small more", "aria-expanded": String(state.booksOpen),
+    onclick: () => { state.booksOpen = !state.booksOpen; store.set("booksOpen", state.booksOpen); render(); } },
+    state.booksOpen ? "Hide all books ▴" : `Show all ${bookRows.length} books ▾`);
   kids.push(el("div", { class: "grid2" },   // books first (Russ, 2026-11-09)
     el("section", { class: "card" }, el("h2", {}, "Readings by book"), legend.cloneNode(true),
-      topBooks.length ? bars(topBooks.map(e => ({ label: e.b, value: e.n, color: isNT(e.b) ? "var(--s2)" : "var(--s1)" })), "chapters read") : el("p", { class: "hint" }, "No readings in this time frame.")),
+      topBooks.length ? bars(topBooks.map(e => ({ label: e.b, value: e.n, color: isNT(e.b) ? "var(--s2)" : "var(--s1)" })), "chapters read") : el("p", { class: "hint" }, "No readings in this time frame."),
+      toggleBooks),
     el("section", { class: "card" }, el("h2", {}, "Most read chapters"), legend,
       topCh.length ? bars(topCh.map(e => ({ label: e.chapter, value: e.n, color: isNT(e.book) ? "var(--s2)" : "var(--s1)" })), "times") : el("p", { class: "hint" }, "No readings in this time frame."))));
   kids.push(el("div", { class: "gridgap" }));
+  if (state.booksOpen) {
+    kids.push(el("section", { class: "card" }, el("h2", {}, `All books of the Bible · ${bookRows.length}`),
+      sortTable("books", [
+        // the dot is the Testament, colored as in the charts (a Testament column did not fit a phone)
+        { key: "book", label: "Book", val: r => r._tie, cell: r => el("span", { class: "hy", title: isNT(r.book) ? "New Testament" : "Old Testament" },
+          el("i", { style: `background:${isNT(r.book) ? "var(--s2)" : "var(--s1)"}` }), r.book), nowrap: true },
+        { key: "n", label: "Times read", head: "Times read", val: r => r.n, num: true },
+        { key: "diff", label: "Different chapters", head: "Different chapters", val: r => r.diff, num: true, cell: r => r.of ? `${r.diff} of ${r.of}` : String(r.diff), nowrap: true },
+        { key: "last", label: "Last read", head: "Last read", val: r => r.last, cell: r => r.last ? fmtDate(dateOnly(r.last)) : "", nowrap: "wide" },
+      ], bookRows, { key: "book", dir: "asc" }, 100),
+      el("p", { class: "hint", style: "margin:8px 0 0" }, "Times read counts each chapter each time it was read; Different chapters counts each chapter once.")));
+  }
   kids.push(el("section", { class: "card" }, el("h2", {}, `Bible chapters read · ${chRows.length}`),
     sortTable("chapters", [
       { key: "chapter", label: "Chapter", val: r => r._tie, cell: r => r.chapter, nowrap: true },
