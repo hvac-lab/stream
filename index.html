@@ -103,6 +103,15 @@
   a { color: var(--s1); }
   .banner { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--warning); background: var(--warnbg); font-size: 14px; }
   .banner.info { border-color: var(--s1); background: var(--band); }
+  .banner.bad { border-color: var(--critical); background: var(--badbg); }
+  /* live in church (top of the Now tab) */
+  .card.live { border: 2px solid var(--s1); }
+  .live .tag { font-size: 12px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--s1); }
+  .live .tag::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--critical); margin-right: 7px; animation: pulse 1.4s ease-in-out infinite; }
+  .live .now { font-size: 22px; font-weight: 700; margin: 6px 0 4px; line-height: 1.25; }
+  .live .now .what { display: block; font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .live .off { color: var(--muted); font-weight: 600; } .live .now.off { font-size: 17px; }
+  .live .sub { color: var(--ink-2); font-size: 14px; font-weight: 400; margin-top: 3px; }
   .ctl { margin-top: 14px; }
   .confirm { margin-top: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 12px; background: var(--warnbg); font-size: 14px; }
   .confirm p { margin: 0 0 10px; } .confirm p.sure { font-size: 16px; font-weight: 700; margin-bottom: 4px; }   /* Russ, 2026-11-10 */
@@ -392,6 +401,8 @@ async function load() {
   const m = Object.fromEntries((meta.data || []).map(x => [x.key, x.value]));
   state.schedule = m.schedule || null;
   state.pcSeen = m.pc?.last_seen ? new Date(m.pc.last_seen) : null;
+  state.mixer = m.mixer || null;   // Sanctuary mixer plan + results (Invoke-MixerSchedule.ps1, 2026-11-15)
+  state.live = m.live || null;     // live speaker / hymn (Watch-Live.ps1 + analyze\live.py, 2026-11-15)
 }
 function setPc() {
   const p = $("#pc"), t = $("#pcText");
@@ -568,12 +579,104 @@ function render() {
 }
 
 // ------------------------------------------------------------------ Now
+// ------------------------------------------------------------------ live in church (Russ, 2026-11-15: "the current
+// speaker and hymn song, live, within 30 seconds, at the top of the Now tab"). The church PC listens to the last 20 s of
+// the audio every 10 s (analyze\live.py) and writes stream_meta 'live'; this page reloads every 5 s during a service.
+function liveCard() {
+  const L = state.live;
+  if (!L || !L.active) return null;
+  const at = L.at ? new Date(L.at) : null;
+  const age = at ? (Date.now() - at) / 1000 : 1e9;
+  const running = state.runs.some(r => r.run_key === L.run_key && overall(r).cls === "running");
+  if (!running && age > 300) return null;
+  const heard = L.audioAt ? new Date(L.audioAt) : at;
+  const card = el("section", { class: "card live" },
+    el("div", { class: "stepline" }, el("span", { class: "tag" }, "Live in church"),
+      el("span", { class: "sub" }, heard ? `heard ${fmtTime(heard)} · ${age < 90 ? Math.max(0, Math.round(age)) + " s ago" : ago(at)}` : "")));
+  let now;
+  if (age > 90) now = el("div", { class: "now off" }, "The church PC has not reported what it hears for a while.");
+  else if (L.state === "singing") {
+    const h = L.hymn;
+    now = el("div", { class: "now" }, el("span", { class: "what" }, "Singing"),
+      h && h.number ? `#${h.number} ${h.title || ""}` : el("span", { class: "off" }, "hymn not known yet"),
+      h && h.hymnal ? el("span", { class: "sub" }, ` · ${h.hymnal}`) : null);
+  } else if (L.state === "speaking") {
+    now = el("div", { class: "now" }, el("span", { class: "what" }, "Speaking"),
+      L.speaker && L.speaker.known ? L.speaker.name : el("span", { class: "off" }, "a voice not on file"));
+  } else if (L.state === "waiting") now = el("div", { class: "now off" }, "Waiting for the sound to start");
+  else now = el("div", { class: "now off" }, "Quiet");
+  card.append(now);
+  const hy = (L.hymns || []).filter(h => h.number);
+  const la = L.lastAnnounced;
+  if (la && la.number && L.state !== "singing" && !hy.some(h => String(h.number) === String(la.number) && h.time >= la.time))
+    card.append(el("div", { class: "sub" }, `Announced at ${la.time}: #${la.number} ${la.title || ""}${la.hymnal ? " · " + la.hymnal : ""}`));
+  if (hy.length) card.append(el("div", { class: "sub" }, "Hymns so far: " + hy.map(h => `${h.time} #${h.number} ${h.title || ""}`).join(" · ")));
+  const names = [];
+  for (const s of L.speakers || []) if (s.name && s.name !== "UNKNOWN" && !names.some(n => n.name === s.name)) names.push(s);
+  if (names.length) card.append(el("div", { class: "sub" }, "Ministers heard: " + names.map(s => `${s.name} (from ${String(s.from).slice(0, 5)})`).join(" · ")));
+  return card;
+}
+
+// ------------------------------------------------------------------ Sanctuary mixer (Russ, 2026-11-15: "add the muting
+// to the Now tab, so we know what is happening and when"). From stream_meta 'mixer' (Invoke-MixerSchedule.ps1).
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+function mixerCard() {
+  const M = state.mixer;
+  if (!M || !M.enabled) return null;
+  const now = new Date(), todayName = WEEKDAYS[now.getDay()];
+  const w = M.walkoff || {};
+  const days = [...new Set([...(M.steps || []).map(s => s.day), w.day].filter(Boolean))];
+  const isToday = days.includes(todayName);
+  const fresh = M.date === ymd(now);   // results belong to today
+  const atToday = hm => { const [h, m] = String(hm).split(":").map(Number); const d = new Date(now); d.setHours(h, m, 0, 0); return d; };
+  const rows = (M.steps || []).map(s => ({ time: s.time, label: s.label, kind: "step", s }));
+  if (w.from) rows.push({ time: w.from, label: `${M.bus || "AUXILIARY"} muted ${w.emptyMin || 5} minutes after the ministers walk off the platform (${fmtTime(atToday(w.latest || "11:45"))} at the latest)`, kind: "walk" });
+  rows.sort((a, b) => a.time < b.time ? -1 : 1);
+  const ol = el("ol", { class: "steps" });
+  const fixed = rows.filter(x => x.kind === "step");
+  for (const r of rows) {
+    let cls = "pending", stat = `at ${fmtTime(atToday(r.time))}`, detail = null;
+    if (r.kind === "step") {
+      const s = isToday && fresh ? r.s : {};
+      const nx = fixed[fixed.indexOf(r) + 1];
+      const windowEnd = nx ? atToday(nx.time) : new Date(atToday(r.time).getTime() + 3600e3);   // as Invoke-MixerSchedule.ps1
+      if (s.status === "done") { cls = "ok"; stat = `Done · ${fmtTime(new Date(s.at))}`; detail = s.detail; }
+      else if (s.status === "failed") { cls = "failed"; stat = `Not done · ${fmtTime(new Date(s.at))}`; detail = s.detail + (windowEnd > now ? " The PC tries again every minute." : ""); }
+      else if (isToday && atToday(r.time) <= now && windowEnd > now) { cls = "running"; stat = "Due now"; }
+      else if (isToday && windowEnd <= now) { cls = "warning"; stat = "No result"; detail = "The church PC did not report this step (was it off?)."; }
+    } else if (isToday && fresh && w.status) {
+      const es = w.emptySince ? new Date(w.emptySince) : null, mu = w.mutedAt ? new Date(w.mutedAt) : null;
+      if (w.status === "muted") { cls = "ok"; stat = `Muted · ${fmtTime(mu)}`; detail = es ? `The platform was empty from ${fmtTime(es)}.` : w.detail; }
+      else if (w.status === "muted (fallback)") { cls = "warning"; stat = `Muted · ${fmtTime(mu)}`; detail = "The camera did not see the ministers leave, so it was muted at the latest time."; }
+      else if (w.status === "failed") { cls = "failed"; stat = "Not muted"; detail = (w.detail || "") + " Mute AUXILIARY by hand."; }
+      else if (w.status === "gave up") { cls = "warning"; stat = "Stopped watching"; detail = w.detail; }
+      else if (es) { cls = "running"; stat = `Mutes at ${fmtTime(new Date(es.getTime() + (w.emptyMin || 5) * 60000))}`; detail = `The platform has been empty since ${fmtTime(es)}.`; }
+      else { cls = "running"; stat = "Watching the platform"; detail = w.occupiedSeen ? "The ministers are on the platform." : "Waiting to see the ministers on the platform."; }
+    } else if (r.kind === "walk" && isToday && atToday(r.time) <= now && atToday(w.latest || "11:45") > now) { cls = "running"; stat = "Watching the platform"; }
+    ol.append(el("li", { class: cls },
+      el("div", { class: "num", "aria-hidden": "true" }, cls === "ok" ? "✓" : cls === "failed" ? "✕" : cls === "warning" ? "!" : "•"),
+      el("div", {}, el("div", { class: "stepline" }, el("b", {}, `${fmtTime(atToday(r.time))} · ${r.label}`), el("span", { class: "stat" }, stat)),
+        detail ? el("div", { class: "detail" }, detail) : null)));
+  }
+  const H = M.health || {};
+  let hl;
+  if (H.ok === false) hl = el("div", { class: "banner bad" }, el("b", {}, "The mixer is not answering. "), `${H.detail || ""}. Restart the mixer; the PC checks again every 2 minutes.`);
+  else if (H.ok && H.at) hl = el("p", { class: "hint", style: "margin:8px 0 0" }, `Mixer answering at ${M.host} · checked ${fmtTime(new Date(H.at))}` +
+    (H.db !== null && H.db !== undefined ? ` · ${M.bus} ${H.db > 0 ? "+" : ""}${H.db} dB, ${H.muted ? "muted" : "unmuted"}` : ""));
+  else hl = el("p", { class: "hint", style: "margin:8px 0 0" }, `The PC checks the mixer (${M.host}) every 2 minutes on ${(H.days || ["Sunday"]).join(", ")}s from ${fmtTime(atToday(H.from || "09:30"))}, and texts you if it stops answering.`);
+  return el("section", { class: "card" }, el("h2", {}, `Sanctuary mixer · ${M.bus || "AUXILIARY"} · ${isToday ? "today" : "every " + days.join(", ")}`), hl, ol);
+}
+
 function renderNow() {
   const kids = [];
   const runs = state.runs;
+  const lc = liveCard();
+  if (lc) kids.push(lc);
   const current = runs.find(r => overall(r).cls === "running") || runs[0];
   if (current) kids.push(runCard(current, current.run_date === ymd(new Date()) && overall(current).cls === "running" ? "Now" : "Latest service"));
   else kids.push(el("section", { class: "card" }, el("h2", {}, "Latest service"), el("p", { class: "hint" }, "No service has reported yet.")));
+  const mx = mixerCard();
+  if (mx) kids.push(mx);
   const liveTest = state.tests.find(r => overall(r).cls === "running");
   if (liveTest && state.admin) kids.unshift(el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, "A test is running: "), liveTest.service_name + ". ",
     el("a", { href: "#", onclick: (e) => { e.preventDefault(); state.tab = "tests"; store.set("tab", "tests"); render(); } }, "Watch it on the Tests tab")));
@@ -752,7 +855,8 @@ function renderProcessMap() {
         step(3, "Recording", "OBS records the full-quality video at the same time, for the archive.", ["OBS"]),
         step(4, "Audio streaming", "The PC starts Rocket Broadcaster at the same time; it sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
       phase("During", ["6 minutes in", ...list("check")],
-        step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound (if the room is still quiet, it listens every minute and judges the radio once the service starts, up to 20 minutes); the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"])),
+        step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound (if the room is still quiet, it listens every minute and judges the radio once the service starts, up to 20 minutes); the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"]),
+        step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds.", ["Rocket Broadcaster", "Now tab"])),
       phase("Cutoff", ["at the set time, or earlier with the Stop button", ...list("cutoff")],
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. When the service ends early, anyone on the list can press “Service is over: stop the stream now” on the Now tab; the PC stops within a minute and goes on to step 7.", ["OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
@@ -763,19 +867,29 @@ function renderProcessMap() {
         step(11, "Google Sheet updated", "Adds the sermon and its hymns to the “Morris North Sermons” sheet.", ["Google Sheet"]),
         step(12, "Report emailed", "Sends a summary of the service and its checks by email and to a phone.", ["Email", "Phone"])),
       el("p", { class: "hint", style: "margin:4px 0 0" }, "Each step shows on the Now tab as it happens; the History tab keeps every service.")),
+    // Sanctuary mixer, Sundays (Russ, 2026-11-15: "update the process map with the mute / unmute for Aux")
+    el("section", { class: "card" }, el("h2", {}, "Sundays: Sanctuary mixer, AUXILIARY"),
+      phase("Morning", ["10:00, then 10:10"],
+        step(null, "Turned up", "AUXILIARY goes up to +10 dB at 10:00 and back to 0 dB at 10:10. It is unmuted already, from the Sunday before.", ["Soundcraft Ui mixer"])),
+      phase("After the AM service", ["watching from 11:00", "11:45 at the latest"],
+        step(null, "Muted", "The PC watches the platform in the camera picture. When the ministers have walked off and it stays empty for 5 minutes (a kneeling prayer is shorter), AUXILIARY is muted. If the camera does not see them leave, it is muted at 11:45 and you get a text.", ["Camera", "Soundcraft Ui mixer"])),
+      phase("Afternoon", ["12:15, then 12:25"],
+        step(null, "Unmuted, turned up", "AUXILIARY is unmuted and goes up to +10 dB at 12:15, back to 0 dB at 12:25. It stays unmuted until the next Sunday.", ["Soundcraft Ui mixer"])),
+      phase("All morning", ["9:30 to 12:35", "every 2 minutes"],
+        step(null, "Mixer checked", "The PC reads the mixer. If it does not answer twice in a row, you get a text to restart the mixer; if it moved to a new network address, the PC finds it by its hardware address and uses it. Each step shows on the Now tab when it happens.", ["Soundcraft Ui mixer", "Phone alert", "Now tab"]))),
     el("div", { class: "grid2" },
       el("section", { class: "card" }, el("h2", {}, "Every day, in the background"),
         el("div", { class: "pm-steps one" },
           step(null, "Status page", "Every minute the PC tells this page it is on and picks up any change made here.", ["This page"]),
           step(null, "Numbers for the tabs", "Once a day: AC Central's sermon list since 2015, the hymns and the viewer counts from Vimeo and Radio Mast, for Ministers, Hymns, Bible, Copyright and Viewers.", ["AC Central", "Vimeo", "Radio Mast"]),
-          step(null, "Tests", "An admin can rehearse a past service from the Tests tab; nothing is published.", ["Tests tab"]),
-          step(null, "Sanctuary mixer, Sundays", "On the Soundcraft Ui mixer the AUXILIARY bus goes up to +10 dB at 10:00 and back to 0 dB at 10:10. From 11:00 the PC watches the platform in the camera picture and mutes AUXILIARY 5 minutes after the ministers walk off (11:45 at the latest). At 12:15 it unmutes AUXILIARY and turns it up to +10 dB, back to 0 dB at 12:25.", ["Soundcraft Ui mixer", "Camera"]))),
+          step(null, "Tests", "An admin can rehearse a past service from the Tests tab; nothing is published.", ["Tests tab"]))),
       el("section", { class: "card" }, el("h2", {}, "When a person steps in"),
         el("div", { class: "pm-steps one" },
           step(null, "Run by hand", "For a wedding, funeral or special program, set the service to run by hand on the Now tab; the PC leaves it alone.", ["Now tab"], "hand"),
           step(null, "Service over early", "Press “Service is over: stop the stream now” on the Now tab; the PC stops the stream within a minute and does steps 7 to 12 as usual.", ["Now tab"], "hand"),
           step(null, "Visiting minister", "A voice the PC does not know is entered as “Visiting Minister”; the name is fixed on AC Central afterwards.", ["AC Central"], "hand"),
-          step(null, "Sign-in expired", "Vimeo signs in again through the church Google account by itself; if Google asks for a password, someone signs in once on the PC.", ["Vimeo"], "hand")))),
+          step(null, "Sign-in expired", "Vimeo signs in again through the church Google account by itself; if Google asks for a password, someone signs in once on the PC.", ["Vimeo"], "hand"),
+          step(null, "Mixer not answering", "After the text, restart the Soundcraft mixer (power off and on). The PC tells you when it answers again and catches up on any step it missed.", ["Soundcraft Ui mixer"], "hand")))),
     el("p", { class: "hint", style: "text-align:center" }, `Map updated ${fmtDate(parseYmd(MAP_UPDATED))} · only admins see this tab`));
 }
 
@@ -1482,6 +1596,18 @@ async function demoLoad() {
   // &running=1: today's Sunday AM streaming now, to try "Service is over: stop the stream now" (2026-11-15)
   if (params.get("running") === "1") state.runs.unshift({ run_key: `${ymd(today)}_SunAM`, run_date: ymd(today), service_id: "SunAM", service_name: "Sunday AM",
     steps: allOk(t(9, 57)).map((s, i) => i < 5 ? s : { ...s, status: "pending", detail: "", at: null }), summary: {} });
+  // Sanctuary mixer card + live card (2026-11-15); &running=1 shows a Sunday morning in progress
+  const mixSteps = [["10:00", "AUXILIARY up to +10 dB"], ["10:10", "AUXILIARY back to 0 dB"], ["12:15", "AUXILIARY unmuted and up to +10 dB"], ["12:25", "AUXILIARY back to 0 dB"]];
+  const isRun = params.get("running") === "1";
+  state.mixer = { date: ymd(today), enabled: true, host: "192.168.1.8", bus: "AUXILIARY",
+    steps: mixSteps.map(([time, label], i) => ({ day: isRun ? WEEKDAYS[today.getDay()] : "Sunday", time, label, status: isRun && i < 2 ? "done" : null, at: isRun && i < 2 ? t(10, i * 10) : null,
+      detail: isRun && i < 2 ? `AUXILIARY: ${i ? 0 : 10} dB, unmuted` : null })),
+    walkoff: { day: isRun ? WEEKDAYS[today.getDay()] : "Sunday", from: "11:00", latest: "11:45", emptyMin: 5, status: isRun ? "watching" : null, occupiedSeen: isRun ? t(11, 0) : null, emptySince: isRun ? new Date(Date.now() - 95e3).toISOString() : null },
+    health: { at: isRun ? new Date(Date.now() - 50e3).toISOString() : null, ok: isRun ? true : null, db: 0, muted: false, days: ["Sunday"], from: "09:30", to: "12:35" } };
+  state.live = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 8e3).toISOString(), audioAt: new Date(Date.now() - 14e3).toISOString(), state: "singing",
+    hymn: { number: "202", hymnal: "Zion's Harp", title: "Christ My All", how: "announced #202" },
+    hymns: [{ time: "10:01", number: "153", hymnal: "Zion's Harp", title: "The Lord is My Shepherd" }, { time: "11:08", number: "202", hymnal: "Zion's Harp", title: "Christ My All" }],
+    speakers: [{ name: "Ben Furrer", from: "10:08:40", to: "10:52:10" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" } } : null;
   // sample sermons / hymns for the Stats and Copyright tabs
   const who = ["Doug Moser", "Damon Knobloch", "Adam Zeltwanger", "Ben Furrer", "Chris Westerman"];
   const chs = ["Psalms 23", "John 3", "Romans 8", "Matthew 5", "Isaiah 53", "Acts 2", "Genesis 1", "Hebrews 11", "Judges 20", "Mark 9", "Psalms 122", "John 10"];
