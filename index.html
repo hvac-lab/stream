@@ -750,7 +750,7 @@ function renderProcessMap() {
         step(1, "Automatic start", "A scheduled task on the church PC starts the service. It checks the Sanctuary camera, mic and internet first.", ["Windows scheduler"]),
         step(2, "Video streaming", "OBS starts the live video to the Vimeo live event behind AC Central's player.", ["OBS", "Vimeo"]),
         step(3, "Recording", "OBS records the full-quality video at the same time, for the archive.", ["OBS"]),
-        step(4, "Audio streaming", "Rocket Broadcaster starts 3 minutes later and sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
+        step(4, "Audio streaming", "The PC starts Rocket Broadcaster at the same time; it sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
       phase("During", ["6 minutes in", ...list("check")],
         step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound; the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"])),
       phase("Cutoff", ["at the set time, or earlier with the Stop button", ...list("cutoff")],
