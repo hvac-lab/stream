@@ -57,6 +57,10 @@
   button.big { width: 100%; padding: 13px; font-size: 16px; font-weight: 600; border-radius: 12px; }
   button.manual { border: 2px solid var(--warning); color: var(--warning); }
   button.auto { border: 2px solid var(--good); color: var(--good); }
+  button.stop { border: 2px solid var(--critical); color: var(--critical); }   /* "Stop the stream now" (2026-11-15) */
+  button.yes.stop { background: var(--critical); color: #fff; }
+  .confirm.stop { border-color: var(--critical); background: var(--badbg); }
+  .banner.stop { border-color: var(--critical); background: var(--badbg); }
   button.yes { background: var(--warning); border-color: transparent; color: #fff; }
   button.primary { background: var(--s1); color: #fff; border-color: transparent; font-weight: 600; }
   button.small { padding: 3px 10px; font-size: 13px; } button.danger { color: var(--critical); }
@@ -373,15 +377,17 @@ async function load() {
   if (demo) { await demoLoad(); return; }
   const sb = state.sb;
   const cols = "run_key,run_date,service_id,service_name,steps,summary,is_test,updated_at";
-  const [runs, tests, ctl, meta, req] = await Promise.all([
+  const [runs, tests, ctl, meta, req, stopReq] = await Promise.all([
     sb.from("stream_runs").select(cols).eq("is_test", false).order("run_date", { ascending: false }).order("run_key", { ascending: false }).limit(200),
     sb.from("stream_runs").select(cols).eq("is_test", true).order("updated_at", { ascending: false }).limit(10),
     sb.from("stream_control").select("run_key,note,set_by,set_at"),
     sb.from("stream_meta").select("key,value"),
     sb.from("stream_requests").select("*").order("id", { ascending: false }).limit(10),
+    sb.from("stream_stop_requests").select("*").order("id", { ascending: false }).limit(10),
   ]);
   for (const r of [runs, tests, ctl, meta, req]) if (r.error) throw new Error(r.error.message);
   state.runs = runs.data || []; state.tests = tests.data || []; state.requests = req.data || [];
+  state.stops = stopReq.error ? [] : (stopReq.data || []);   // stream_status_6.sql; a missing table just hides the button's history
   state.control = new Map((ctl.data || []).map(c => [c.run_key, c]));
   const m = Object.fromEntries((meta.data || []).map(x => [x.key, x.value]));
   state.schedule = m.schedule || null;
@@ -480,6 +486,40 @@ async function setManual(key, manual, note) {
   state.busy = false; state.asking = null; render();
 }
 
+// "Service is over: stop the stream now" (Russ, 2026-11-15: a button to stop it when the service is over, so it goes
+// on to step 7). Anyone on the list, like "Run by hand". The page asks through stream_request_stop(); the church PC's
+// every-minute task (Watch-Requests.ps1) runs Stop-Service.ps1, which stops OBS + Rocket and hands off to steps 7-12.
+function stopControl(run) {
+  const key = run.run_key, box = el("div", { class: "ctl" });
+  const last = (state.stops || []).find(q => q.run_key === key);
+  const at = (q) => fmtTime(new Date(q.requested_at));
+  if (last && last.status === "pending") {
+    box.append(el("div", { class: "banner stop" }, el("b", {}, "Stop asked. "),
+      `${last.requested_by} at ${at(last)}. The church PC stops the stream within a minute; then steps 7 to 12 run by themselves.`));
+  } else if (last && last.status === "done") {
+    box.append(el("div", { class: "banner stop" }, el("b", {}, "Stopping. "),
+      `Asked by ${last.requested_by} at ${at(last)}${last.note ? `. ${last.note}` : ""}. Step 6 turns done when the recording has finished writing.`));
+  } else if (state.askingStop === key) {
+    box.append(el("div", { class: "confirm stop" }, el("p", { class: "sure" }, "Is the service over?"),
+      el("p", {}, "The live video and the radio audio end now for everyone watching or listening, and the recording stops. This cannot be undone. Then the church PC finds the minister, readings and hymns, trims the recording, uploads it to Vimeo and enters it on AC Central (steps 7 to 12)."),
+      el("div", { class: "row" },
+        el("button", { class: "yes stop", disabled: state.busy, onclick: () => askStop(key) }, "Yes, stop the stream now"),
+        el("button", { onclick: () => { state.askingStop = null; render(); } }, "Cancel"))));
+  } else {
+    if (last && last.status === "failed") box.append(el("div", { class: "msg bad" }, `Last stop request not carried out: ${last.note || "see the church PC's log"}`));
+    box.append(el("button", { class: "big stop", disabled: state.busy, onclick: () => { state.askingStop = key; state.stopMsg = null; render(); } },
+      "Service is over: stop the stream now"));
+  }
+  if (state.stopMsg && state.stopMsg.key === key) box.append(el("div", { class: "msg " + (state.stopMsg.ok ? "ok" : "bad") }, state.stopMsg.text));
+  return box;
+}
+async function askStop(key) {
+  state.busy = true; state.stopMsg = null; render();
+  try { await rpc("stream_request_stop", { p_run_key: key }); await load(); }
+  catch (e) { state.stopMsg = { key, ok: false, text: "Could not ask for the stop: " + (e.message || e) }; }
+  state.busy = false; state.askingStop = null; render();
+}
+
 function runCard(run, title, opts = {}) {
   const day = parseYmd(run.run_date);
   const o = overall(run);
@@ -492,7 +532,10 @@ function runCard(run, title, opts = {}) {
     opts.detail ? runDetail(run) : stepList(run));
   if (!run.is_test) {
     const stopStep = stepOf(run, "stop");
-    if (o.cls === "running" && stopStep.status === "pending" && run.service_id !== "Special") card.append(manualControl(run.run_key, svc, true));
+    const live = o.cls === "running" && stopStep.status === "pending" && run.service_id !== "Special";
+    // the stop button only while the stream is on (step 2 done) and the service runs automatically
+    if (live && !state.control.has(run.run_key) && ["ok", "warning"].includes(stepOf(run, "video").status) && run.run_date === ymd(new Date())) card.append(stopControl(run));
+    if (live) card.append(manualControl(run.run_key, svc, true));
     else if (state.control.has(run.run_key)) card.append(manualControl(run.run_key, svc, false));
   }
   return card;
@@ -608,7 +651,7 @@ function renderHistory() {
 // What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
-const MAP_UPDATED = "2026-11-10";
+const MAP_UPDATED = "2026-11-15";
 // The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
 // stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
 function processSvg(K, svcs, t, short) {
@@ -670,6 +713,7 @@ function processSvg(K, svcs, t, short) {
     arrow([[585, 425], [640, 425]]), label(608, 417, "Yes"),
     box(640, 395, 150, 60, "pc", ["Cutoff:", "stream stopped"], 6),
     ...when("cutoff").map((s, i) => label(842, 416 + i * 14, s, "start")),
+    label(842, 416 + svcs.length * 14 + 6, "or earlier: Stop button", "start"), label(842, 416 + svcs.length * 14 + 20, "on the Now tab", "start"),
 
     // band 3: after the service
     arrow([[790, 425], [830, 425], [830, 585], [74, 585], [74, 620]]),
@@ -709,8 +753,8 @@ function renderProcessMap() {
         step(4, "Audio streaming", "Rocket Broadcaster starts 3 minutes later and sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
       phase("During", ["6 minutes in", ...list("check")],
         step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound; the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"])),
-      phase("Cutoff", ["at the set time, or Stop Stream Now", ...list("cutoff")],
-        step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing.", ["OBS", "Rocket Broadcaster"])),
+      phase("Cutoff", ["at the set time, or earlier with the Stop button", ...list("cutoff")],
+        step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. When the service ends early, anyone on the list can press “Service is over: stop the stream now” on the Now tab; the PC stops within a minute and goes on to step 7.", ["OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
         step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns.", ["Church PC only"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
@@ -728,6 +772,7 @@ function renderProcessMap() {
       el("section", { class: "card" }, el("h2", {}, "When a person steps in"),
         el("div", { class: "pm-steps one" },
           step(null, "Run by hand", "For a wedding, funeral or special program, set the service to run by hand on the Now tab; the PC leaves it alone.", ["Now tab"], "hand"),
+          step(null, "Service over early", "Press “Service is over: stop the stream now” on the Now tab; the PC stops the stream within a minute and does steps 7 to 12 as usual.", ["Now tab"], "hand"),
           step(null, "Visiting minister", "A voice the PC does not know is entered as “Visiting Minister”; the name is fixed on AC Central afterwards.", ["AC Central"], "hand"),
           step(null, "Sign-in expired", "Vimeo signs in again through the church Google account by itself; if Google asks for a password, someone signs in once on the PC.", ["Vimeo"], "hand")))),
     el("p", { class: "hint", style: "text-align:center" }, `Map updated ${fmtDate(parseYmd(MAP_UPDATED))} · only admins see this tab`));
@@ -1432,7 +1477,10 @@ async function demoLoad() {
     { run_key: "2026-11-08_SunPM", run_date: "2026-11-08", service_id: "SunPM", service_name: "Sunday PM", steps: allOk(t(14, 23)), summary: { ...sum, speaker: "Doug Moser", readings: ["Psalms 122:1-9", "Matthew 18:15-17"] } },
     { run_key: "2026-11-08_SunAM", run_date: "2026-11-08", service_id: "SunAM", service_name: "Sunday AM", steps: bad, summary: sum },
     { run_key: "2026-11-04_WedPM", run_date: "2026-11-04", service_id: "WedPM", service_name: "Wednesday Evening", steps: allOk(t(21, 17)), summary: { ...sum, speaker: "Adam Zeltwanger", readings: ["Exodus 27:1-21", "Revelation 21:1-7"] } }];
-  state.tests = []; state.requests = []; state.pcSeen = new Date(Date.now() - 40e3);
+  state.tests = []; state.requests = []; state.stops = []; state.pcSeen = new Date(Date.now() - 40e3);
+  // &running=1: today's Sunday AM streaming now, to try "Service is over: stop the stream now" (2026-11-15)
+  if (params.get("running") === "1") state.runs.unshift({ run_key: `${ymd(today)}_SunAM`, run_date: ymd(today), service_id: "SunAM", service_name: "Sunday AM",
+    steps: allOk(t(9, 57)).map((s, i) => i < 5 ? s : { ...s, status: "pending", detail: "", at: null }), summary: {} });
   // sample sermons / hymns for the Stats and Copyright tabs
   const who = ["Doug Moser", "Damon Knobloch", "Adam Zeltwanger", "Ben Furrer", "Chris Westerman"];
   const chs = ["Psalms 23", "John 3", "Romans 8", "Matthew 5", "Isaiah 53", "Acts 2", "Genesis 1", "Hebrews 11", "Judges 20", "Mark 9", "Psalms 122", "John 10"];
@@ -1453,6 +1501,13 @@ async function demoLoad() {
                  { email: "someone@example.org", note: "Sound booth", is_admin: false, added_at: "2026-11-09T16:00:00Z", added_by: "russ.koehl@morrisnorth.org" }];
   // a quick test plays itself, one step every 3 s
   state.demoTick = () => {
+    // a stop request: the "PC" picks it up on one tick, the stop step is done on the next
+    const sq = state.stops.find(x => x.status === "pending" || (x.status === "done" && !x.demoDone));
+    if (sq) { const r = state.runs.find(x => x.run_key === sq.run_key), st = r && r.steps.find(s => s.key === "stop");
+      if (sq.status === "pending") { sq.status = "done"; sq.note = `Stop started at ${fmtTime(new Date())}`; }
+      else if (st) { sq.demoDone = true; Object.assign(st, { status: "ok", detail: `Stopped at ${fmtTime(new Date())} from the status page by ${sq.requested_by} after 75 min. Recordings: 2026-11-15_09-57-01-sermonVideo.mp4.`, at: new Date().toISOString() });
+        const an = r.steps.find(s => s.key === "analysis"); Object.assign(an, { status: "running", detail: "Listening to the recording for the minister, readings and hymns; this takes about 15 to 20 minutes.", at: new Date().toISOString() }); }
+      return; }
     const q = state.requests.find(x => x.status === "pending" || x.status === "running"); if (!q) return;
     const src = state.runs.find(r => r.run_key === q.source_key);
     let tr = state.tests.find(x => x.run_key === q.test_key);
@@ -1469,6 +1524,8 @@ function demoRpc(fn, a) {
   if (fn === "stream_set_manual") { if (a.p_manual) state.control.set(a.p_run_key, { run_key: a.p_run_key, note: a.p_note, set_by: "demo@example.org", set_at: new Date().toISOString() }); else state.control.delete(a.p_run_key); return; }
   if (fn === "stream_request_test") { if (state.requests.some(q => q.status === "pending" || q.status === "running")) throw new Error("A test is already waiting or running");
     state.requests.unshift({ id: Date.now(), source_key: a.p_source_key, mode: a.p_mode, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString(), test_key: `${ymd(new Date())}_Test${a.p_source_key.slice(11)}` }); return 1; }
+  if (fn === "stream_request_stop") { if (!state.stops.some(x => x.run_key === a.p_run_key && x.status === "pending"))
+      state.stops.unshift({ id: Date.now(), run_key: a.p_run_key, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString() }); return 1; }
   if (fn === "stream_cancel_request") { const q = state.requests.find(x => x.id === a.p_id); if (q) q.status = "cancelled"; return; }
   if (fn === "stream_admin_add_user") { const e = a.p_email.toLowerCase(); const u = state.users.find(x => x.email === e);
     if (u) { u.note = a.p_note || u.note; u.is_admin = !!a.p_admin; } else state.users.push({ email: e, note: a.p_note, is_admin: !!a.p_admin, added_at: new Date().toISOString(), added_by: "demo" }); return; }
