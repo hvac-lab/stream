@@ -752,7 +752,7 @@ function renderProcessMap() {
         step(3, "Recording", "OBS records the full-quality video at the same time, for the archive.", ["OBS"]),
         step(4, "Audio streaming", "The PC starts Rocket Broadcaster at the same time; it sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
       phase("During", ["6 minutes in", ...list("check")],
-        step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound; the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"])),
+        step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound (if the room is still quiet, it listens every minute and judges the radio once the service starts, up to 20 minutes); the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"])),
       phase("Cutoff", ["at the set time, or earlier with the Stop button", ...list("cutoff")],
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. When the service ends early, anyone on the list can press “Service is over: stop the stream now” on the Now tab; the PC stops within a minute and goes on to step 7.", ["OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
