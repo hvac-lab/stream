@@ -663,7 +663,7 @@ function liveSummaryBox(run) {
   if (!L && !V) return null;
   const kids = liveDetails(L || {}, V, true);
   if (!kids.length) return null;
-  return el("div", { class: "live livebox" }, el("div", { class: "tag" }, "Heard live during the service"), ...kids);
+  return el("div", { class: "live livebox" }, ...kids);
 }
 
 // hymns (two columns), ministers (one per line, first - last heard), readings (bottom left) and the counts box
@@ -681,17 +681,18 @@ function liveDetails(L, V, ended) {
     const m = mins.find(x => x.name === s.name);
     if (m) m.to = s.to; else mins.push({ name: s.name, from: s.from, to: s.to });
   }
-  if (mins.length) out.push(el("div", { class: "sub lbl" }, "Ministers heard:"),
+  if (mins.length) out.push(el("div", { class: "sub lbl" }, "Ministers:"),
     el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, `${m.name} (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`))));
   // bottom row. Left: the Bible readings so far (analyze\live.py, the after-service finder on the words spoken).
   // Right: people watching (Vimeo) and listening (Radio Mast), read once a minute (Watch-Viewers.ps1). Total = both
-  // at the same reading; its Max is the most together at one time.
+  // in both columns (its Max = Video Max + Audio Max).
   const rd = (L.readings || []).filter(Boolean).map(r => `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`);
   let counts = null;
   if (V) {
     const fresh = (x) => x && (ended ? x.current != null : x.at && (Date.now() - new Date(x.at)) / 1000 < 300);
     const v = fresh(V.video) ? V.video : null, a = fresh(V.audio) ? V.audio : null;
-    const t = fresh(V.total) ? V.total : (v && a ? { current: v.current + a.current, peak: null } : null);
+    // Total = Video + Audio in both columns (Russ, 2026-11-18: "Add the total for max 4 + 10 = 14")
+    const t = v && a ? { current: v.current + a.current, peak: v.peak != null && a.peak != null ? v.peak + a.peak : null } : null;
     if (v || a) {
       const row = (name, x, cls) => el("tr", cls ? { class: cls } : {}, el("th", {}, name),
         el("td", {}, x ? String(x.current) : "–"), el("td", {}, x && x.peak != null ? String(x.peak) : "–"));
