@@ -66,7 +66,7 @@
   button.yes { background: var(--warning); border-color: transparent; color: #fff; }
   button.primary { background: var(--s1); color: #fff; border-color: transparent; font-weight: 600; }
   button.small { padding: 3px 10px; font-size: 13px; } button.danger { color: var(--critical); }
-  main { padding: 16px; max-width: 980px; margin: 0 auto; }
+  main { padding: 16px; max-width: 980px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; }   /* tall enough to keep the tab row at the top */
   main.narrow { max-width: 760px; }
   .hint { color: var(--muted); font-size: 13px; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; margin-bottom: 16px; }
@@ -582,6 +582,10 @@ function runCard(run, title, opts = {}) {
 }
 
 // ------------------------------------------------------------------ tabs
+// A tab click while the tab row is stuck at the top of the window keeps it there and opens the new tab just below it;
+// otherwise the page starts at the top (Russ, 2026-11-18, same on the HVAC page).
+const tabsStuck = () => window.scrollY >= $("header").offsetHeight - 1;
+const tabScroll = (stuck) => window.scrollTo(0, stuck ? $("header").offsetHeight : 0);
 function renderTabs() {
   const nav = $("#tabs"); nav.style.display = ""; nav.replaceChildren();
   // table headers that stick while scrolling sit just below the sticky tab row (--navh = its height)
@@ -591,7 +595,7 @@ function renderTabs() {
   const testLive = state.tests.some(r => overall(r).cls === "running") || state.requests.some(q => q.status === "pending" || q.status === "running");
   for (const [k, label] of TABS) {
     if (adminOnly.includes(k) && !state.admin) continue;
-    nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); window.scrollTo(0, 0);
+    nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { const stuck = tabsStuck(); state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); tabScroll(stuck);
         if (DATA_TABS.includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
       label, k === "tests" && testLive ? el("span", { class: "live", title: "a test is running" }) : null));
   }
