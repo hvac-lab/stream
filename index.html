@@ -122,7 +122,11 @@
   .livebox .tag { font-size: 12px; } .livebox .tag::before { display: none; }
   .live .hymncols { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; gap: 2px 24px; font-size: 14px; color: var(--ink-2); }
   .live .minlines { font-size: 14px; color: var(--ink-2); }
-  .live .minread { padding-left: 22px; font-weight: 650; color: var(--ink); }
+  .live .minlines strong { font-weight: 650; color: var(--ink); }
+  .live .minread { padding-left: 22px; }
+  .live .livetop { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 18px; flex-wrap: wrap; }
+  .live .livetop .readings { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
+  .live .livetop table.counts { margin-top: 8px; }
   @media (max-width: 560px) { .live .hymncols { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; } }
   .live .livefoot { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px 18px; flex-wrap: wrap; margin-top: 10px; font-size: 15px; }
   .live .readings strong { font-weight: 650; }
@@ -441,6 +445,13 @@ async function rpc(fn, args) {
 }
 
 // ------------------------------------------------------------------ shared pieces
+// a step's text, and under step 7 the box of what was heard live. With the box there, step 7's own line "Minister: ...
+// Readings: ... Hymns: n." is left out (Russ, 2026-11-19: "remove this ... duplicate").
+function stepBody(run, s) {
+  const box = s.key === "analysis" && !run.is_test ? liveSummaryBox(run) : null;
+  const dup = box && s.status === "ok" && /^Minister: .*Hymns: \d+\.$/.test(s.detail || "");
+  return [s.detail && !dup ? el("div", { class: "detail" }, linkify(s.detail)) : null, box];
+}
 function stepList(run) {
   const ol = el("ol", { class: "steps" });
   (run.steps || []).forEach((s, i) => {
@@ -450,8 +461,7 @@ function stepList(run) {
       el("div", {},
         el("div", { class: "stepline" }, el("b", {}, `${i + 1}. ${s.label}`),
           el("span", { class: "stat" }, (STATUS_WORD[s.status] || s.status) + (at && s.status !== "pending" ? ` · ${fmtTime(at)}` : ""))),
-        s.detail ? el("div", { class: "detail" }, linkify(s.detail)) : null,
-        s.key === "analysis" && !run.is_test ? liveSummaryBox(run) : null)));
+        ...stepBody(run, s))));
   });
   return ol;
 }
@@ -677,9 +687,8 @@ function liveDetails(L, V, ended) {
   const out = [];
   const hy = (L.hymns || []).filter(h => h && h.number);
   // Russ, 2026-11-18: hymns in two columns, each minister on a line of his own with from - to, the counts in a box
-  // (Video / Audio / Total down the side, Current / Max across), the Bible readings beside it.
-  if (hy.length) out.push(el("div", { class: "sub lbl" }, ended ? "Hymns:" : "Hymns so far:"),
-    el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, `${h.time} #${h.number} ${h.title || ""}`))));
+  // (Video / Audio / Total down the side, Current / Max across). 2026-11-19: ministers first with the counts to their
+  // right at the top, the hymns below; only the minister names bold.
   const mins = [];   // one line per minister: first heard - last heard (other voices in between do not split it)
   for (const s of L.speakers || []) {
     if (!s.name || s.name === "UNKNOWN") continue;
@@ -700,12 +709,15 @@ function liveDetails(L, V, ended) {
     return best;
   };
   const reads = (L.readings || []).filter(Boolean).map(r => ({ text: `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`, who: readerOf(r) }));
-  if (mins.length) out.push(el("div", { class: "sub lbl" }, "Ministers:"),
-    el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, `${m.name} (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`,
+  const left = [];
+  if (mins.length) left.push(el("div", { class: "sub lbl" }, "Ministers:"),
+    el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, el("strong", {}, m.name), ` (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`,
       ...reads.filter(x => x.who === m.name).map(x => el("div", { class: "minread" }, x.text))))));
-  // bottom row. Left: readings no minister is matched to. Right: people watching (Vimeo) and listening (Radio Mast),
-  // read once a minute (Watch-Viewers.ps1). Total = both in both columns (its Max = Video Max + Audio Max).
+  // readings no minister is matched to: below the ministers
   const rd = reads.filter(x => !x.who || !mins.some(m => m.name === x.who)).map(x => x.text);
+  if (rd.length) left.push(el("div", { class: "readings" }, rd.join(" · ")));
+  // top right: people watching (Vimeo) and listening (Radio Mast), read once a minute (Watch-Viewers.ps1).
+  // Total = both in both columns (its Max = Video Max + Audio Max).
   let counts = null;
   if (V) {
     const fresh = (x) => x && (ended ? x.current != null : x.at && (Date.now() - new Date(x.at)) / 1000 < 300);
@@ -721,9 +733,9 @@ function liveDetails(L, V, ended) {
         el("tbody", {}, row("Video", v), row("Audio", a), row("Total", t, "tot")));
     }
   }
-  if (rd.length || counts)
-    out.push(el("div", { class: "livefoot" },
-      el("div", { class: "readings" }, rd.length ? el("strong", {}, rd.join(" · ")) : ""), counts || el("span", {})));
+  if (left.length || counts) out.push(el("div", { class: "livetop" }, el("div", { class: "liveleft" }, ...left), counts || el("span", {})));
+  if (hy.length) out.push(el("div", { class: "sub lbl" }, ended ? "Hymns:" : "Hymns so far:"),
+    el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, `${h.time} #${h.number} ${h.title || ""}`))));
   return out;
 }
 
