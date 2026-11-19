@@ -684,6 +684,13 @@ function liveSummaryBox(run) {
 
 // hymns (two columns), ministers (one per line, first - last heard), readings (bottom left) and the counts box
 // (bottom right). ended = the service is over: counts are the last reading, not checked for freshness.
+// Under step 7 each hymn shows its book instead of the time (Russ, 2026-11-19: "remove the 19:18 replace with the
+// name of the hymn book. Some will be Tabernacle Hymns"). The combined Hymns of Zion book continues into the
+// Tabernacle hymns from 303 on, so those say Tabernacle Hymns, with the number as it stands in the book.
+const bookName = (h) => {
+  const b = h.hymnal === "Hymns of Zion" && parseInt(h.number, 10) > 302 ? "Tabernacle Hymns" : h.hymnal;
+  return b ? b + " " : "";
+};
 function liveDetails(L, V, ended) {
   const out = [];
   const hy = (L.hymns || []).filter(h => h && h.number);
@@ -740,7 +747,8 @@ function liveDetails(L, V, ended) {
   }
   if (left.length || counts) out.push(el("div", { class: "livetop" }, el("div", { class: "liveleft" }, ...left), counts || el("span", {})));
   if (hy.length) out.push(el("div", { class: "sub lbl" }, ended ? "Hymns:" : "Hymns so far:"),
-    el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, `${h.time} #${h.number} ${h.title || ""}`))));
+    el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, ended
+      ? `${bookName(h)}#${h.number} ${h.title || ""}` : `${h.time} #${h.number} ${h.title || ""}`))));
   return out;
 }
 
@@ -1724,8 +1732,9 @@ async function demoLoad() {
   state.runs = [
     { run_key: "2026-11-08_SunPM", run_date: "2026-11-08", service_id: "SunPM", service_name: "Sunday PM", steps: allOk(t(14, 23)), summary: { ...sum, speaker: "Doug Moser", readings: ["Psalms 122:1-9", "Matthew 18:15-17"],
       readingSpans: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9, time: "12:36" }, { book: "Matthew", chapter: 18, v0: 15, v1: 17, time: "13:18" }],
-      live: { hymns: [{ time: "12:18", number: "291", title: "O For a Thousand Tongues" }, { time: "12:21", number: "405", title: "I Will Sing the Wondrous Story" }, { time: "12:23", number: "485", title: "Sweet By and By" },
-          { time: "12:26", number: "148", title: "Hear Thou My Prayer" }, { time: "12:29", number: "159", title: "Self Sacrifice" }, { time: "12:58", number: "160", title: "The Believing Family" }, { time: "13:19", number: "32", title: "Who Shall Abide" }],
+      live: { hymns: [{ time: "12:18", number: "291", hymnal: "Hymns of Zion", title: "O For a Thousand Tongues" }, { time: "12:21", number: "405", hymnal: "Hymns of Zion", title: "I Will Sing the Wondrous Story" },
+          { time: "12:23", number: "485", hymnal: "Hymns of Zion", title: "Sweet By and By" }, { time: "12:26", number: "148", hymnal: "Hymns of Zion", title: "Hear Thou My Prayer" },
+          { time: "12:29", number: "159", hymnal: "Zion's Harp", title: "Self Sacrifice" }, { time: "12:58", number: "160", hymnal: "Zion's Harp", title: "The Believing Family" }, { time: "13:19", number: "32", hymnal: "Zion's Harp", title: "Who Shall Abide" }],
         speakers: [{ name: "UNKNOWN", from: "12:18:41", to: "12:33:22" }, { name: "Doug Moser", from: "12:33:32", to: "13:17:02" }, { name: "Chris Westerman", from: "13:17:13", to: "13:23:21" }, { name: "Doug Moser", from: "13:25:50", to: "13:26:00" }],
         readings: [],
         viewers: { video: { current: 1, peak: 4 }, audio: { current: 6, peak: 10 }, total: { current: 7, peak: 12 } } } } },
