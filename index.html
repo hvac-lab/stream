@@ -690,11 +690,15 @@ function liveDetails(L, V, ended) {
   // Russ, 2026-11-18: hymns in two columns, each minister on a line of his own with from - to, the counts in a box
   // (Video / Audio / Total down the side, Current / Max across). 2026-11-19: ministers first with the counts to their
   // right at the top, the hymns below; only the minister names bold.
-  const mins = [];   // one line per minister: first heard - last heard (other voices in between do not split it)
+  // one line per minister with the minutes his voice was heard in all (Russ, 2026-11-19: "Damon Knobloch - xx ...
+  // the total mins"); each heard stretch counts from its first to its last 10-s reading, plus that last reading
+  const hms = (t) => { const p = String(t).split(":").map(Number); return p[0] * 3600 + p[1] * 60 + (p[2] || 0); };
+  const mins = [];
   for (const s of L.speakers || []) {
     if (!s.name || s.name === "UNKNOWN") continue;
+    const sec = Math.max(0, hms(s.to) - hms(s.from)) + 10;
     const m = mins.find(x => x.name === s.name);
-    if (m) m.to = s.to; else mins.push({ name: s.name, from: s.from, to: s.to });
+    if (m) m.sec += sec; else mins.push({ name: s.name, sec });
   }
   // Bible readings (analyze\live.py, the after-service finder on the words spoken), each indented under the minister
   // whose voice was heard when it began (Russ, 2026-11-18); one nobody is matched to stays at the bottom left.
@@ -712,7 +716,7 @@ function liveDetails(L, V, ended) {
   const reads = (L.readings || []).filter(Boolean).map(r => ({ text: `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`, who: readerOf(r) }));
   const left = [];
   if (mins.length) left.push(el("div", { class: "sub lbl" }, "Ministers:"),
-    el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, el("strong", {}, m.name), ` (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`,
+    el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, el("strong", {}, m.name), ` - ${Math.max(1, Math.round(m.sec / 60))} min`,
       ...reads.filter(x => x.who === m.name).map(x => el("div", { class: "minread" }, x.text))))));
   // readings no minister is matched to: below the ministers
   const rd = reads.filter(x => !x.who || !mins.some(m => m.name === x.who)).map(x => x.text);
