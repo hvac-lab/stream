@@ -122,7 +122,6 @@
   .livebox .tag { font-size: 12px; } .livebox .tag::before { display: none; }
   .live .hymncols { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; gap: 2px 24px; font-size: 14px; color: var(--ink-2); }
   .live .minlines, .live .hymnlist { font-size: 14px; color: var(--ink-2); }
-  .live .hymnlist { margin-top: 10px; }
   .live .minlines strong { font-weight: 650; color: var(--ink); }
   .live .minread { padding-left: 22px; }
   .live .livetop { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 18px; flex-wrap: wrap; }
@@ -737,13 +736,14 @@ function liveDetails(L, V, ended) {
   // Total = both in both columns (its Max = Video Max + Audio Max).
   let counts = null;
   if (V) {
-    const fresh = (x) => x && (ended ? x.current != null : x.at && (Date.now() - new Date(x.at)) / 1000 < 300);
+    // ended: services before the live listener (rebuilt 2026-11-19) have only the Max, no Final reading
+    const fresh = (x) => x && (ended ? x.current != null || x.peak != null : x.at && (Date.now() - new Date(x.at)) / 1000 < 300);
     const v = fresh(V.video) ? V.video : null, a = fresh(V.audio) ? V.audio : null;
     // Total = Video + Audio in both columns (Russ, 2026-11-18: "Add the total for max 4 + 10 = 14")
-    const t = v && a ? { current: v.current + a.current, peak: v.peak != null && a.peak != null ? v.peak + a.peak : null } : null;
+    const t = v && a ? { current: v.current != null && a.current != null ? v.current + a.current : null, peak: v.peak != null && a.peak != null ? v.peak + a.peak : null } : null;
     if (v || a) {
       const row = (name, x, cls) => el("tr", cls ? { class: cls } : {}, el("th", {}, name),
-        el("td", {}, x ? String(x.current) : "–"), el("td", {}, x && x.peak != null ? String(x.peak) : "–"));
+        el("td", {}, x && x.current != null ? String(x.current) : "–"), el("td", {}, x && x.peak != null ? String(x.peak) : "–"));
       // after the service "Current" is the last reading, taken as the stream stopped
       counts = el("table", { class: "counts" },
         el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, ended ? "Final" : "Current"), el("th", {}, "Max"))),
