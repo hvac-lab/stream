@@ -1584,7 +1584,7 @@ function renderViewers() {
         r.video_plays ?? "", hrs(r.video_seconds), r.audio_hours ?? "", r.sessions])) }, "Download as a spreadsheet (CSV)") : null));
   kids.push(el("p", { class: "hint", style: "text-align:center" },
     "Video: Vimeo's count of the most people watching at one time (the AC Central player plays the Vimeo stream). ",
-    "Audio: Radio Mast's highest hourly peak of listeners during the service. Both: the two added together. ",
+    "Audio: Radio Mast's highest hourly peak of listeners during the service, or the church PC's once-a-minute reading during the service when that was higher (since Nov 18). Both: the two added together, the same number as Views on the History tab. ",
     `Updated after each service and once a day${first ? `; numbers since ${fmtDate(dateOnly(first))}` : ""}.`));
   screen(...kids);
 }
