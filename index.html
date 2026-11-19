@@ -121,7 +121,7 @@
   .livebox { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; background: var(--surface); }
   .livebox .tag { font-size: 12px; } .livebox .tag::before { display: none; }
   .live .hymncols { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; gap: 2px 24px; font-size: 14px; color: var(--ink-2); }
-  .live .minlines { font-size: 14px; color: var(--ink-2); }
+  .live .minlines, .live .hymnlist { font-size: 14px; color: var(--ink-2); }
   .live .minlines strong { font-weight: 650; color: var(--ink); }
   .live .minread { padding-left: 22px; }
   .live .livetop { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 18px; flex-wrap: wrap; }
@@ -688,8 +688,7 @@ function liveSummaryBox(run) {
 // name of the hymn book. Some will be Tabernacle Hymns"). The combined Hymns of Zion book continues into the
 // Tabernacle hymns from 303 on, so those say Tabernacle Hymns, with the number as it stands in the book.
 const bookName = (h) => {
-  const b = h.hymnal === "Hymns of Zion" && parseInt(h.number, 10) > 302 ? "Tabernacle Hymns" : h.hymnal;
-  return b ? b + " " : "";
+  return h.hymnal === "Hymns of Zion" && parseInt(h.number, 10) > 302 ? "Tabernacle Hymns" : (h.hymnal || "");
 };
 function liveDetails(L, V, ended) {
   const out = [];
@@ -747,8 +746,9 @@ function liveDetails(L, V, ended) {
   }
   if (left.length || counts) out.push(el("div", { class: "livetop" }, el("div", { class: "liveleft" }, ...left), counts || el("span", {})));
   if (hy.length) out.push(el("div", { class: "sub lbl" }, ended ? "Hymns:" : "Hymns so far:"),
-    el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, ended
-      ? `${bookName(h)}#${h.number} ${h.title || ""}` : `${h.time} #${h.number} ${h.title || ""}`))));
+    // under step 7 one column, oldest first, "Hymns of Zion - #291 - O For a Thousand Tongues" (Russ, 2026-11-19)
+    ended ? el("div", { class: "hymnlist" }, ...[...hy].sort((a, b) => String(a.time || "").localeCompare(String(b.time || ""))).map(h => el("div", {}, [bookName(h), `#${h.number}`, h.title].filter(Boolean).join(" - "))))
+      : el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, `${h.time} #${h.number} ${h.title || ""}`))));
   return out;
 }
 
