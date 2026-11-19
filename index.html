@@ -115,10 +115,19 @@
   .live .now .what { display: block; font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .live .off { color: var(--muted); font-weight: 600; } .live .now.off { font-size: 17px; }
   .live .sub { color: var(--ink-2); font-size: 14px; font-weight: 400; margin-top: 3px; }
-  .live .livefoot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 18px; flex-wrap: wrap; margin-top: 6px; font-size: 15px; }
+  .live .lbl { margin-top: 8px; }
+  .live .hymncols { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; gap: 2px 24px; font-size: 14px; color: var(--ink-2); }
+  .live .minlines { font-size: 14px; color: var(--ink-2); }
+  @media (max-width: 560px) { .live .hymncols { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; } }
+  .live .livefoot { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px 18px; flex-wrap: wrap; margin-top: 10px; font-size: 15px; }
   .live .readings strong { font-weight: 650; }
-  .live .viewers { display: flex; gap: 18px; margin-left: auto; color: var(--ink-2); }
-  .live .viewers strong { color: var(--ink); font-weight: 700; }
+  .live table.counts { width: auto; margin-left: auto; border: 1px solid var(--border); border-radius: 8px; border-collapse: separate; border-spacing: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .live table.counts th, .live table.counts td { padding: 3px 12px; text-align: right; }
+  .live table.counts th { text-transform: none; letter-spacing: 0; font-size: 14px; background: none; }
+  .live table.counts thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+  .live table.counts tbody th { text-align: left; font-weight: 600; color: var(--ink-2); }
+  .live table.counts td { font-weight: 700; color: var(--ink); }
+  .live table.counts tr.tot th, .live table.counts tr.tot td { border-top: 1px solid var(--border); }
   .ctl { margin-top: 14px; }
   .confirm { margin-top: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 12px; background: var(--warnbg); font-size: 14px; }
   .confirm p { margin: 0 0 10px; } .confirm p.sure { font-size: 16px; font-weight: 700; margin-bottom: 4px; }   /* Russ, 2026-11-10 */
@@ -625,25 +634,34 @@ function liveCard() {
   const la = L.lastAnnounced;
   if (la && la.number && L.state !== "singing" && !hy.some(h => String(h.number) === String(la.number) && h.time >= la.time))
     card.append(el("div", { class: "sub" }, `Announced at ${la.time}: #${la.number} ${la.title || ""}${la.hymnal ? " · " + la.hymnal : ""}`));
-  if (hy.length) card.append(el("div", { class: "sub" }, "Hymns so far: " + hy.map(h => `${h.time} #${h.number} ${h.title || ""}`).join(" · ")));
-  const names = [];
-  for (const s of L.speakers || []) if (s.name && s.name !== "UNKNOWN" && !names.some(n => n.name === s.name)) names.push(s);
-  if (names.length) card.append(el("div", { class: "sub" }, "Ministers heard: " + names.map(s => `${s.name} (from ${String(s.from).slice(0, 5)})`).join(" · ")));
-  // bottom row. Left: the Bible readings so far (analyze\live.py, the after-service finder on the words spoken; Russ,
-  // 2026-11-18: "main books and chapters : verses on the bottom left"). Right: people listening (Radio Mast) and
-  // watching (Vimeo) right now, read once a minute (Russ, 2026-11-18: "Audio: x  Video: y"); the most at one time
-  // shows on hover.
+  // Russ, 2026-11-18: hymns in two columns, each minister on a line of his own with from - to, the counts in a box
+  // (Video / Audio / Total down the side, Current / Max across), the Bible readings beside it.
+  if (hy.length) card.append(el("div", { class: "sub lbl" }, "Hymns so far:"),
+    el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, `${h.time} #${h.number} ${h.title || ""}`))));
+  const mins = [];   // one line per minister: first heard - last heard (other voices in between do not split it)
+  for (const s of L.speakers || []) {
+    if (!s.name || s.name === "UNKNOWN") continue;
+    const m = mins.find(x => x.name === s.name);
+    if (m) m.to = s.to; else mins.push({ name: s.name, from: s.from, to: s.to });
+  }
+  if (mins.length) card.append(el("div", { class: "sub lbl" }, "Ministers heard:"),
+    el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, `${m.name} (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`))));
+  // bottom row. Left: the Bible readings so far (analyze\live.py, the after-service finder on the words spoken).
+  // Right: people watching (Vimeo) and listening (Radio Mast), read once a minute (Watch-Viewers.ps1). Total = both
+  // at the same reading; its Max is the most together at one time.
   const rd = (L.readings || []).map(r => `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`);
   let counts = null;
   const V = state.watching;
   if (V && V.active && V.run_key === L.run_key) {
     const fresh = (x) => x && x.at && (Date.now() - new Date(x.at)) / 1000 < 300;
     const v = fresh(V.video) ? V.video : null, a = fresh(V.audio) ? V.audio : null;
+    const t = fresh(V.total) ? V.total : (v && a ? { current: v.current + a.current, peak: null } : null);
     if (v || a) {
-      const most = [a && a.peak ? `audio ${a.peak}` : null, v && v.peak ? `video ${v.peak}` : null].filter(Boolean);
-      counts = el("div", { class: "viewers", title: most.length ? `Most at one time: ${most.join(", ")}` : "" },
-        a ? el("span", {}, "Audio: ", el("strong", {}, String(a.current))) : null,
-        v ? el("span", {}, "Video: ", el("strong", {}, String(v.current))) : null);
+      const row = (name, x, cls) => el("tr", cls ? { class: cls } : {}, el("th", {}, name),
+        el("td", {}, x ? String(x.current) : "–"), el("td", {}, x && x.peak != null ? String(x.peak) : "–"));
+      counts = el("table", { class: "counts" },
+        el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, "Current"), el("th", {}, "Max"))),
+        el("tbody", {}, row("Video", v), row("Audio", a), row("Total", t, "tot")));
     }
   }
   if (rd.length || counts)
@@ -1647,11 +1665,15 @@ async function demoLoad() {
     health: { at: isRun ? new Date(Date.now() - 50e3).toISOString() : null, ok: isRun ? true : null, db: 0, muted: false, days: ["Sunday"], from: "09:30", to: "12:35" } };
   state.live = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 8e3).toISOString(), audioAt: new Date(Date.now() - 14e3).toISOString(), state: "singing",
     hymn: { number: "202", hymnal: "Zion's Harp", title: "Christ My All", how: "announced #202" },
-    hymns: [{ time: "10:01", number: "153", hymnal: "Zion's Harp", title: "The Lord is My Shepherd" }, { time: "11:08", number: "202", hymnal: "Zion's Harp", title: "Christ My All" }],
-    speakers: [{ name: "Ben Furrer", from: "10:08:40", to: "10:52:10" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" },
+    hymns: [{ time: "10:01", number: "276", title: "O For a Thousand Tongues" }, { time: "10:04", number: "105", title: "I Will Sing the Wondrous Story" },
+      { time: "10:06", number: "191", title: "Sweet By and By" }, { time: "10:09", number: "216", title: "Hear Thou My Prayer" },
+      { time: "10:12", number: "159", title: "Self Sacrifice" }, { time: "11:08", number: "202", hymnal: "Zion's Harp", title: "Christ My All" }],
+    speakers: [{ name: "Ben Furrer", from: "10:16:40", to: "10:20:10" }, { name: "UNKNOWN", from: "10:20:20", to: "10:21:00" }, { name: "Ben Furrer", from: "10:21:10", to: "10:30:00" },
+      { name: "Damon Knobloch", from: "10:31:00", to: "11:06:50" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" },
     readings: [{ book: "Psalms", chapter: 78, v0: 4, v1: 71, time: "10:37" }, { book: "John", chapter: 20, v0: 1, v1: 31, time: "10:57" }] } : null;
   state.watching = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 20e3).toISOString(),
-    video: { current: 14, peak: 17, plays: 31, at: new Date(Date.now() - 20e3).toISOString() }, audio: { current: 6, peak: 8, at: new Date(Date.now() - 20e3).toISOString() } } : null;
+    video: { current: 14, peak: 17, plays: 31, at: new Date(Date.now() - 20e3).toISOString() }, audio: { current: 6, peak: 8, at: new Date(Date.now() - 20e3).toISOString() },
+    total: { current: 20, peak: 24, at: new Date(Date.now() - 20e3).toISOString() } } : null;
   // sample sermons / hymns for the Stats and Copyright tabs
   const who = ["Doug Moser", "Damon Knobloch", "Adam Zeltwanger", "Ben Furrer", "Chris Westerman"];
   const chs = ["Psalms 23", "John 3", "Romans 8", "Matthew 5", "Isaiah 53", "Acts 2", "Genesis 1", "Hebrews 11", "Judges 20", "Mark 9", "Psalms 122", "John 10"];
