@@ -173,6 +173,7 @@
   .pf.pass { background: var(--good); } .pf.fail { background: var(--critical); } .pf.run { background: var(--s1); } .pf.hand { background: var(--warning); }
   table.hist td.readings { min-width: 150px; }
   table.hist .ctr, table.hist th.ctr { text-align: center; font-variant-numeric: tabular-nums; }
+  table.hist td.mins .min2 { color: color-mix(in srgb, var(--ink) 60%, var(--ink-2)); }
   table.hist .svc-under { display: none; color: var(--ink-2); font-size: 12px; margin-left: 14px; }
   table.hist tr.detailrow > td { background: var(--page); padding: 6px 12px 16px; }
   .two { display:grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
@@ -868,6 +869,22 @@ function totalViews(r) {
   const v = w?.video?.peak, a = w?.audio?.peak;
   return v == null && a == null ? null : (v || 0) + (a || 0);
 }
+// Minister cell: the main minister, then any other minister heard, each on a line of its own in a slightly lighter
+// ink (Russ, 2026-11-19: "add the 2nd one directly under the first one ... very very slight from black to gray").
+// Others = the analysis' Speaker2, then the voices in the box under step 7 (heard 1 min or more), most minutes first.
+function histMinisters(r) {
+  const s = r.summary || {};
+  const main = s.speaker || "";
+  const others = [];
+  const add = (n) => { n = String(n || "").replace(/\s*\(.*$/, "").trim(); if (n && n !== "UNKNOWN" && n !== main && !others.includes(n)) others.push(n); };
+  add(s.speaker2);
+  const hms = (t) => { const p = String(t).split(":").map(Number); return p[0] * 3600 + p[1] * 60 + (p[2] || 0); };
+  const tot = {};
+  for (const x of s.live?.speakers || []) if (x && x.name && x.name !== "UNKNOWN") tot[x.name] = (tot[x.name] || 0) + Math.max(0, hms(x.to) - hms(x.from)) + 10;
+  Object.entries(tot).filter(([, sec]) => sec >= 60).sort((a, b) => b[1] - a[1]).forEach(([n]) => add(n));
+  if (!main && !others.length) return [el("span", { class: "hint" }, "—")];
+  return [main ? el("div", {}, main) : el("div", { class: "hint" }, "—"), ...others.map(n => el("div", { class: "min2" }, n))];
+}
 function renderHistory() {
   const runs = [...state.runs];
   const col = HIST_COLS.find(c => c.key === state.sort.key) || HIST_COLS[0];
@@ -887,7 +904,7 @@ function renderHistory() {
       el("td", { class: "date" }, el("span", { class: "tw" }, open ? "▾" : "▸"), fmtDate(parseYmd(r.run_date)), el("span", { class: "svc-under" }, r.service_name)),
       el("td", { class: "svc-col" }, r.service_name),
       el("td", { class: "res" }, el("span", { class: "pf " + pf.cls }, pf.text), pr ? el("small", {}, pr) : null),
-      el("td", {}, s.speaker || el("span", { class: "hint" }, "—")),
+      el("td", { class: "mins" }, ...histMinisters(r)),
       el("td", { class: "readings" }, (s.readings || []).length ? (s.readings || []).join("; ") : el("span", { class: "hint" }, "—")),
       el("td", { class: "opt-col ctr" }, String((s.hymns || []).length)),
       el("td", { class: "views ctr", title: "Most watching on video + most listening on audio" }, totalViews(r) == null ? el("span", { class: "hint" }, "—") : String(totalViews(r))));
