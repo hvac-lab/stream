@@ -667,7 +667,8 @@ function liveCard() {
 // the service and before the run is pushed again, from stream_meta 'live' / 'viewers' for the same run.
 function liveSummaryBox(run) {
   let L = run.summary?.live || null, V = L ? L.viewers : null;
-  if (state.live && state.live.run_key === run.run_key && !state.live.active) {
+  // the run's own summary first (it holds corrections, 2026-11-19); stream_meta only until the run has it
+  if (!L && state.live && state.live.run_key === run.run_key && !state.live.active) {
     L = state.live;
     V = state.watching && state.watching.run_key === run.run_key ? state.watching : V;
   }
@@ -880,7 +881,7 @@ function renderHistory() {
 // What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
-const MAP_UPDATED = "2026-11-18";
+const MAP_UPDATED = "2026-11-19";
 // The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
 // stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
 function processSvg(K, svcs, t, short) {
@@ -987,7 +988,7 @@ function renderProcessMap() {
       phase("Stop", ["whichever comes first:", "5 min after the ministers walk off", "the Stop button", "the set time:", ...list("cutoff")],
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
-        step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns.", ["Church PC only"]),
+        step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns. Before the service the hymn numbers are looked up in the Tabernacle / Hymns of Zion book first, from the hymn right before the service (5 min before a minister is first heard) in Zion's Harp first; a hymnal named in the announcement wins.", ["Church PC only"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
         step(9, "Video uploaded to Vimeo", "Uploads the trimmed video, unlisted, to the Morris North folder.", ["Vimeo"]),
         step(10, "Sermon entry on AC Central", "Adds the sermon: date, service, minister, readings, the audio file and the video link.", ["AC Central"]),
@@ -1719,8 +1720,8 @@ async function demoLoad() {
   state.runs = [
     { run_key: "2026-11-08_SunPM", run_date: "2026-11-08", service_id: "SunPM", service_name: "Sunday PM", steps: allOk(t(14, 23)), summary: { ...sum, speaker: "Doug Moser", readings: ["Psalms 122:1-9", "Matthew 18:15-17"],
       readingSpans: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9, time: "12:36" }, { book: "Matthew", chapter: 18, v0: 15, v1: 17, time: "13:18" }],
-      live: { hymns: [{ time: "12:18", number: "276", title: "O For a Thousand Tongues" }, { time: "12:21", number: "105", title: "I Will Sing the Wondrous Story" }, { time: "12:23", number: "191", title: "Sweet By and By" },
-          { time: "12:26", number: "216", title: "Hear Thou My Prayer" }, { time: "12:29", number: "159", title: "Self Sacrifice" }, { time: "12:58", number: "160", title: "The Believing Family" }, { time: "13:19", number: "32", title: "Who Shall Abide" }],
+      live: { hymns: [{ time: "12:18", number: "291", title: "O For a Thousand Tongues" }, { time: "12:21", number: "405", title: "I Will Sing the Wondrous Story" }, { time: "12:23", number: "485", title: "Sweet By and By" },
+          { time: "12:26", number: "148", title: "Hear Thou My Prayer" }, { time: "12:29", number: "159", title: "Self Sacrifice" }, { time: "12:58", number: "160", title: "The Believing Family" }, { time: "13:19", number: "32", title: "Who Shall Abide" }],
         speakers: [{ name: "UNKNOWN", from: "12:18:41", to: "12:33:22" }, { name: "Doug Moser", from: "12:33:32", to: "13:17:02" }, { name: "Chris Westerman", from: "13:17:13", to: "13:23:21" }, { name: "Doug Moser", from: "13:25:50", to: "13:26:00" }],
         readings: [],
         viewers: { video: { current: 1, peak: 4 }, audio: { current: 6, peak: 10 }, total: { current: 7, peak: 12 } } } } },
@@ -1740,8 +1741,8 @@ async function demoLoad() {
     health: { at: isRun ? new Date(Date.now() - 50e3).toISOString() : null, ok: isRun ? true : null, db: 0, muted: false, days: ["Sunday"], from: "09:30", to: "12:35" } };
   state.live = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 8e3).toISOString(), audioAt: new Date(Date.now() - 14e3).toISOString(), state: "singing",
     hymn: { number: "202", hymnal: "Zion's Harp", title: "Christ My All", how: "announced #202" },
-    hymns: [{ time: "10:01", number: "276", title: "O For a Thousand Tongues" }, { time: "10:04", number: "105", title: "I Will Sing the Wondrous Story" },
-      { time: "10:06", number: "191", title: "Sweet By and By" }, { time: "10:09", number: "216", title: "Hear Thou My Prayer" },
+    hymns: [{ time: "10:01", number: "291", title: "O For a Thousand Tongues" }, { time: "10:04", number: "405", title: "I Will Sing the Wondrous Story" },
+      { time: "10:06", number: "485", title: "Sweet By and By" }, { time: "10:09", number: "148", title: "Hear Thou My Prayer" },
       { time: "10:12", number: "159", title: "Self Sacrifice" }, { time: "11:08", number: "202", hymnal: "Zion's Harp", title: "Christ My All" }],
     speakers: [{ name: "Ben Furrer", from: "10:16:40", to: "10:20:10" }, { name: "UNKNOWN", from: "10:20:20", to: "10:21:00" }, { name: "Ben Furrer", from: "10:21:10", to: "10:30:00" },
       { name: "Damon Knobloch", from: "10:31:00", to: "11:06:50" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" },
