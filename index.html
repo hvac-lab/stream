@@ -115,6 +115,7 @@
   .live .now .what { display: block; font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .live .off { color: var(--muted); font-weight: 600; } .live .now.off { font-size: 17px; }
   .live .sub { color: var(--ink-2); font-size: 14px; font-weight: 400; margin-top: 3px; }
+  .live .viewers { font-size: 15px; margin: 2px 0 6px; } .live .viewers strong { font-weight: 650; } .live .viewers .sub { font-size: 14px; }
   .ctl { margin-top: 14px; }
   .confirm { margin-top: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 12px; background: var(--warnbg); font-size: 14px; }
   .confirm p { margin: 0 0 10px; } .confirm p.sure { font-size: 16px; font-weight: 700; margin-bottom: 4px; }   /* Russ, 2026-11-10 */
@@ -406,6 +407,7 @@ async function load() {
   state.pcSeen = m.pc?.last_seen ? new Date(m.pc.last_seen) : null;
   state.mixer = m.mixer || null;   // Sanctuary mixer plan + results (Invoke-MixerSchedule.ps1, 2026-11-15)
   state.live = m.live || null;     // live speaker / hymn (Watch-Live.ps1 + analyze\live.py, 2026-11-15)
+  state.watching = m.viewers || null;   // watching / listening now (stream_meta 'viewers'; state.viewers is the Viewers tab) (Watch-Viewers.ps1 + publish\live-viewers.js, 2026-11-18)
 }
 function setPc() {
   const p = $("#pc"), t = $("#pcText");
@@ -616,6 +618,22 @@ function liveCard() {
   } else if (L.state === "waiting") now = el("div", { class: "now off" }, "Waiting for the sound to start");
   else now = el("div", { class: "now off" }, "Quiet");
   card.append(now);
+  // people watching (Vimeo) and listening (Radio Mast) right now, read once a minute (Russ, 2026-11-18)
+  const V = state.watching;
+  if (V && V.active && V.run_key === L.run_key) {
+    const fresh = (x) => x && x.at && (Date.now() - new Date(x.at)) / 1000 < 300;
+    const v = fresh(V.video) ? V.video : null, a = fresh(V.audio) ? V.audio : null;
+    if (v || a) {
+      const parts = [];
+      if (v) parts.push(`${v.current} watching on video`);
+      if (a) parts.push(`${a.current} listening on the radio`);
+      const most = [];
+      if (v && v.peak) most.push(`${v.peak} video`);
+      if (a && a.peak) most.push(`${a.peak} radio`);
+      card.append(el("div", { class: "viewers" }, el("strong", {}, parts.join(" · ")),
+        most.length ? el("span", { class: "sub" }, ` · most at one time: ${most.join(", ")}`) : null));
+    }
+  }
   const hy = (L.hymns || []).filter(h => h.number);
   const la = L.lastAnnounced;
   if (la && la.number && L.state !== "singing" && !hy.some(h => String(h.number) === String(la.number) && h.time >= la.time))
@@ -768,7 +786,7 @@ function renderHistory() {
 // What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
-const MAP_UPDATED = "2026-11-15";
+const MAP_UPDATED = "2026-11-18";
 // The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
 // stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
 function processSvg(K, svcs, t, short) {
@@ -871,7 +889,7 @@ function renderProcessMap() {
         step(4, "Audio streaming", "The PC starts Rocket Broadcaster at the same time; it sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
       phase("During", ["6 minutes in", ...list("check")],
         step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound (if the room is still quiet, it listens every minute and judges the radio once the service starts, up to 20 minutes); the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"]),
-        step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds.", ["Rocket Broadcaster", "Now tab"])),
+        step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds, with how many people watch the video (Vimeo) and listen to the radio (Radio Mast) right now, read once a minute.", ["Rocket Broadcaster", "Vimeo", "Radio Mast", "Now tab"])),
       phase("Stop", ["whichever comes first:", "5 min after the ministers walk off", "the Stop button", "the set time:", ...list("cutoff")],
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
@@ -1624,6 +1642,8 @@ async function demoLoad() {
     hymn: { number: "202", hymnal: "Zion's Harp", title: "Christ My All", how: "announced #202" },
     hymns: [{ time: "10:01", number: "153", hymnal: "Zion's Harp", title: "The Lord is My Shepherd" }, { time: "11:08", number: "202", hymnal: "Zion's Harp", title: "Christ My All" }],
     speakers: [{ name: "Ben Furrer", from: "10:08:40", to: "10:52:10" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" } } : null;
+  state.watching = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 20e3).toISOString(),
+    video: { current: 14, peak: 17, plays: 31, at: new Date(Date.now() - 20e3).toISOString() }, audio: { current: 6, peak: 8, at: new Date(Date.now() - 20e3).toISOString() } } : null;
   // sample sermons / hymns for the Stats and Copyright tabs
   const who = ["Doug Moser", "Damon Knobloch", "Adam Zeltwanger", "Ben Furrer", "Chris Westerman"];
   const chs = ["Psalms 23", "John 3", "Romans 8", "Matthew 5", "Isaiah 53", "Acts 2", "Genesis 1", "Hebrews 11", "Judges 20", "Mark 9", "Psalms 122", "John 10"];
