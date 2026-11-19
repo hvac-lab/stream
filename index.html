@@ -172,6 +172,7 @@
   table.hist .pf { display:inline-block; font-weight: 700; font-size: 12px; padding: 3px 10px; border-radius: 6px; color: #fff; letter-spacing: .03em; }
   .pf.pass { background: var(--good); } .pf.fail { background: var(--critical); } .pf.run { background: var(--s1); } .pf.hand { background: var(--warning); }
   table.hist td.readings { min-width: 150px; }
+  table.hist td.views { text-align: right; font-variant-numeric: tabular-nums; }
   table.hist .svc-under { display: none; color: var(--ink-2); font-size: 12px; margin-left: 14px; }
   table.hist tr.detailrow > td { background: var(--page); padding: 6px 12px 16px; }
   .two { display:grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
@@ -858,7 +859,15 @@ const HIST_COLS = [
   { key: "speaker", label: "Minister", val: r => (r.summary?.speaker || "").toLowerCase() },
   { key: "readings", label: "Bible readings", val: r => (r.summary?.readings || []).join("; ").toLowerCase() },
   { key: "hymns", label: "Hymns", val: r => (r.summary?.hymns || []).length, opt: true },
+  { key: "views", label: "Views", val: r => totalViews(r) ?? -1 },
 ];
+// Views = the box's Total Max: most watching on video + most listening on audio (Russ, 2026-11-19: "the total views
+// (audio + video)"); from summary.live.viewers (Watch-Viewers, or stream_viewers for the older services)
+function totalViews(r) {
+  const w = r.summary?.live?.viewers;
+  const v = w?.video?.peak, a = w?.audio?.peak;
+  return v == null && a == null ? null : (v || 0) + (a || 0);
+}
 function renderHistory() {
   const runs = [...state.runs];
   const col = HIST_COLS.find(c => c.key === state.sort.key) || HIST_COLS[0];
@@ -880,7 +889,8 @@ function renderHistory() {
       el("td", { class: "res" }, el("span", { class: "pf " + pf.cls }, pf.text), pr ? el("small", {}, pr) : null),
       el("td", {}, s.speaker || el("span", { class: "hint" }, "—")),
       el("td", { class: "readings" }, (s.readings || []).length ? (s.readings || []).join("; ") : el("span", { class: "hint" }, "—")),
-      el("td", { class: "opt-col" }, String((s.hymns || []).length)));
+      el("td", { class: "opt-col" }, String((s.hymns || []).length)),
+      el("td", { class: "views", title: "Most watching on video + most listening on audio" }, totalViews(r) == null ? el("span", { class: "hint" }, "—") : String(totalViews(r))));
     body.append(tr);
     if (open) body.append(el("tr", { class: "detailrow" }, el("td", { colspan: String(HIST_COLS.length) }, runDetail(r))));
   }
