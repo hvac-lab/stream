@@ -661,7 +661,11 @@ function liveSummaryBox(run) {
     L = state.live;
     V = state.watching && state.watching.run_key === run.run_key ? state.watching : V;
   }
+  // readings: the after-service analysis (what went to AC Central, with start times) when the run has it, else what
+  // the live listener found (Russ, 2026-11-19: books, chapters and verses under the ministers in this box)
+  const RS = (run.summary?.readingSpans || []).filter(r => r && r.book);
   if (!L && !V) return null;
+  if (RS.length) L = { ...(L || {}), readings: RS };
   const kids = liveDetails(L || {}, V, true);
   if (!kids.length) return null;
   return el("div", { class: "live livebox" }, ...kids);
@@ -1702,10 +1706,11 @@ async function demoLoad() {
   const bad = allOk(t(12, 8)).map(s => s.key === "vimeo" ? { ...s, status: "failed", detail: "Vimeo upload failed: uploaded, but its link could not be read." } : s.key === "accentral" ? { ...s, status: "skipped", detail: "Not created because the Vimeo upload failed." } : s);
   state.runs = [
     { run_key: "2026-11-08_SunPM", run_date: "2026-11-08", service_id: "SunPM", service_name: "Sunday PM", steps: allOk(t(14, 23)), summary: { ...sum, speaker: "Doug Moser", readings: ["Psalms 122:1-9", "Matthew 18:15-17"],
+      readingSpans: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9, time: "12:36" }, { book: "Matthew", chapter: 18, v0: 15, v1: 17, time: "13:18" }],
       live: { hymns: [{ time: "12:18", number: "276", title: "O For a Thousand Tongues" }, { time: "12:21", number: "105", title: "I Will Sing the Wondrous Story" }, { time: "12:23", number: "191", title: "Sweet By and By" },
           { time: "12:26", number: "216", title: "Hear Thou My Prayer" }, { time: "12:29", number: "159", title: "Self Sacrifice" }, { time: "12:58", number: "160", title: "The Believing Family" }, { time: "13:19", number: "32", title: "Who Shall Abide" }],
         speakers: [{ name: "UNKNOWN", from: "12:18:41", to: "12:33:22" }, { name: "Doug Moser", from: "12:33:32", to: "13:17:02" }, { name: "Chris Westerman", from: "13:17:13", to: "13:23:21" }, { name: "Doug Moser", from: "13:25:50", to: "13:26:00" }],
-        readings: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9, time: "12:36" }, { book: "Matthew", chapter: 18, v0: 15, v1: 17, time: "13:18" }],
+        readings: [],
         viewers: { video: { current: 1, peak: 4 }, audio: { current: 6, peak: 10 }, total: { current: 7, peak: 12 } } } } },
     { run_key: "2026-11-08_SunAM", run_date: "2026-11-08", service_id: "SunAM", service_name: "Sunday AM", steps: bad, summary: sum },
     { run_key: "2026-11-04_WedPM", run_date: "2026-11-04", service_id: "WedPM", service_name: "Wednesday Evening", steps: allOk(t(21, 17)), summary: { ...sum, speaker: "Adam Zeltwanger", readings: ["Exodus 27:1-21", "Revelation 21:1-7"] } }];
