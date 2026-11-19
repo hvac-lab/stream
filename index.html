@@ -742,7 +742,7 @@ function liveDetails(L, V, ended) {
         el("td", {}, x ? String(x.current) : "–"), el("td", {}, x && x.peak != null ? String(x.peak) : "–"));
       // after the service "Current" is the last reading, taken as the stream stopped
       counts = el("table", { class: "counts" },
-        el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, ended ? "At the end" : "Current"), el("th", {}, "Max"))),
+        el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, ended ? "Final" : "Current"), el("th", {}, "Max"))),
         el("tbody", {}, row("Video", v), row("Audio", a), row("Total", t, "tot")));
     }
   }
