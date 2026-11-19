@@ -448,10 +448,14 @@ async function rpc(fn, args) {
 // ------------------------------------------------------------------ shared pieces
 // a step's text, and under step 7 the box of what was heard live. With the box there, step 7's own line "Minister: ...
 // Readings: ... Hymns: n." is left out (Russ, 2026-11-19: "remove this ... duplicate").
+// While step 7 runs the box sits under it; once everything is uploaded and the report is sent (step 12 done) it moves
+// above step 1, on the Now tab and in History (Russ, 2026-11-19).
+const boxOnTop = (run) => !run.is_test && ["ok", "warning"].includes(stepOf(run, "report").status);
+const topBox = (run) => boxOnTop(run) ? liveSummaryBox(run) : null;
 function stepBody(run, s) {
   const box = s.key === "analysis" && !run.is_test ? liveSummaryBox(run) : null;
   const dup = box && s.status === "ok" && /^Minister: .*Hymns: \d+\.$/.test(s.detail || "");
-  return [s.detail && !dup ? el("div", { class: "detail" }, linkify(s.detail)) : null, box];
+  return [s.detail && !dup ? el("div", { class: "detail" }, linkify(s.detail)) : null, boxOnTop(run) ? null : box];
 }
 function stepList(run) {
   const ol = el("ol", { class: "steps" });
@@ -491,7 +495,7 @@ function facts(run) {
 // Full detail of one run: the 12 steps, then the minister / readings and the hymns under them
 // (Russ, 2026-11-09: side by side with the steps was messy)
 function runDetail(run) {
-  return el("div", { class: "stack" },
+  return el("div", { class: "stack" }, topBox(run),
     el("h4", {}, "Steps"), stepList(run),
     el("h4", {}, "Service"), facts(run),
     el("h4", {}, `Hymns (${(run.summary?.hymns || []).length})`), hymnTable(run.summary));
@@ -581,7 +585,7 @@ function runCard(run, title, opts = {}) {
       el("div", {}, el("h3", {}, run.service_name),
         el("div", { class: "when" }, run.is_test ? `Test run on ${fmtDay(day)}` : fmtDay(day) + (svc ? ` · ${fmtTime(atTime(day, svc.start))} to ${fmtTime(atTime(day, svc.cutoff))}` : ""))),
       el("span", { class: "badge " + o.cls }, o.text)),
-    opts.detail ? runDetail(run) : stepList(run));
+    opts.detail ? runDetail(run) : topBox(run), opts.detail ? null : stepList(run));
   if (!run.is_test) {
     const stopStep = stepOf(run, "stop");
     const live = o.cls === "running" && stopStep.status === "pending" && run.service_id !== "Special";
