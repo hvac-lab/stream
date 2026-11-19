@@ -44,7 +44,9 @@
   .pill { display:inline-flex; align-items:center; gap:6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--border); color: var(--ink-2); }
   .pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
   .pill.ok .dot { background: var(--good); } .pill.warn .dot { background: var(--warning); } .pill.bad .dot { background: var(--critical); }
-  nav.tabs { display:flex; gap: 4px; padding: 8px 16px 0; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+  /* the tab row stays at the top of the window once the page scrolls up to it (Russ, 2026-11-18) */
+  nav.tabs { display:flex; gap: 4px; padding: 8px 16px 0; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none;
+    position: sticky; top: 0; z-index: 30; }
   nav.tabs::-webkit-scrollbar { display: none; }   /* ten tabs for admins: a narrow window swipes the tab row, never the page */
   nav.tabs button { border: 1px solid transparent; border-bottom: none; background: none; border-radius: 10px 10px 0 0; padding: 8px 16px; font-size: 15px; color: var(--ink-2); }
   nav.tabs button.on { background: var(--page); border-color: var(--border); color: var(--ink); font-weight: 650; margin-bottom: -1px; }
@@ -146,7 +148,7 @@
   /* headings stay at the top of the window while the rows scroll (Viewers); a scrolling box would stop that, and
      that table fits without sideways scrolling */
   .tablewrap.sticky { overflow: visible; }
-  .tablewrap.sticky th { position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: inset 0 -1px 0 var(--grid); }
+  .tablewrap.sticky th { position: sticky; top: var(--navh, 0px); z-index: 1; background: var(--surface); box-shadow: inset 0 -1px 0 var(--grid); }
   .tablewrap.sticky th.both-col { background: linear-gradient(var(--both-bg), var(--both-bg)), var(--surface); }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
@@ -579,6 +581,8 @@ function runCard(run, title, opts = {}) {
 // ------------------------------------------------------------------ tabs
 function renderTabs() {
   const nav = $("#tabs"); nav.style.display = ""; nav.replaceChildren();
+  // table headers that stick while scrolling sit just below the sticky tab row (--navh = its height)
+  if (!nav._navh && window.ResizeObserver) { nav._navh = new ResizeObserver(() => document.documentElement.style.setProperty("--navh", nav.offsetHeight + "px")); nav._navh.observe(nav); }
   const adminOnly = ["map", "tests", "admin"];   // Russ, 2026-11-09: Tests and Admin only for admins; Process Map too (2026-11-10)
   if (!TABS.some(([k]) => k === state.tab) || (adminOnly.includes(state.tab) && !state.admin)) state.tab = "now";
   const testLive = state.tests.some(r => overall(r).cls === "running") || state.requests.some(q => q.status === "pending" || q.status === "running");
