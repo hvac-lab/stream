@@ -118,6 +118,8 @@
   .live .off { color: var(--muted); font-weight: 600; } .live .now.off { font-size: 17px; }
   .live .sub { color: var(--ink-2); font-size: 14px; font-weight: 400; margin-top: 3px; }
   .live .lbl { margin-top: 8px; }
+  .livebox { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; background: var(--surface); }
+  .livebox .tag { font-size: 12px; } .livebox .tag::before { display: none; }
   .live .hymncols { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; gap: 2px 24px; font-size: 14px; color: var(--ink-2); }
   .live .minlines { font-size: 14px; color: var(--ink-2); }
   @media (max-width: 560px) { .live .hymncols { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; } }
@@ -447,7 +449,8 @@ function stepList(run) {
       el("div", {},
         el("div", { class: "stepline" }, el("b", {}, `${i + 1}. ${s.label}`),
           el("span", { class: "stat" }, (STATUS_WORD[s.status] || s.status) + (at && s.status !== "pending" ? ` · ${fmtTime(at)}` : ""))),
-        s.detail ? el("div", { class: "detail" }, linkify(s.detail)) : null)));
+        s.detail ? el("div", { class: "detail" }, linkify(s.detail)) : null,
+        s.key === "analysis" && !run.is_test ? liveSummaryBox(run) : null)));
   });
   return ol;
 }
@@ -638,9 +641,35 @@ function liveCard() {
   const la = L.lastAnnounced;
   if (la && la.number && L.state !== "singing" && !hy.some(h => String(h.number) === String(la.number) && h.time >= la.time))
     card.append(el("div", { class: "sub" }, `Announced at ${la.time}: #${la.number} ${la.title || ""}${la.hymnal ? " · " + la.hymnal : ""}`));
+  const V = state.watching;
+  card.append(...liveDetails(L, V && V.active && V.run_key === L.run_key ? V : null, false));
+  return card;
+}
+
+// What the PC heard live and how many watched, under step 7 once the service is over (Russ, 2026-11-18: "the items
+// from the new card, hymns, ministers, viewers, etc in the box under step #7"). From the run's own summary.live
+// (Get-MnRunSummary: data\live\<run>-live.json + -viewers-end.json, written when the service ends), or, right after
+// the service and before the run is pushed again, from stream_meta 'live' / 'viewers' for the same run.
+function liveSummaryBox(run) {
+  let L = run.summary?.live || null, V = L ? L.viewers : null;
+  if (state.live && state.live.run_key === run.run_key && !state.live.active) {
+    L = state.live;
+    V = state.watching && state.watching.run_key === run.run_key ? state.watching : V;
+  }
+  if (!L && !V) return null;
+  const kids = liveDetails(L || {}, V, true);
+  if (!kids.length) return null;
+  return el("div", { class: "live livebox" }, el("div", { class: "tag" }, "Heard live during the service"), ...kids);
+}
+
+// hymns (two columns), ministers (one per line, first - last heard), readings (bottom left) and the counts box
+// (bottom right). ended = the service is over: counts are the last reading, not checked for freshness.
+function liveDetails(L, V, ended) {
+  const out = [];
+  const hy = (L.hymns || []).filter(h => h && h.number);
   // Russ, 2026-11-18: hymns in two columns, each minister on a line of his own with from - to, the counts in a box
   // (Video / Audio / Total down the side, Current / Max across), the Bible readings beside it.
-  if (hy.length) card.append(el("div", { class: "sub lbl" }, "Hymns so far:"),
+  if (hy.length) out.push(el("div", { class: "sub lbl" }, ended ? "Hymns:" : "Hymns so far:"),
     el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, `${h.time} #${h.number} ${h.title || ""}`))));
   const mins = [];   // one line per minister: first heard - last heard (other voices in between do not split it)
   for (const s of L.speakers || []) {
@@ -648,30 +677,30 @@ function liveCard() {
     const m = mins.find(x => x.name === s.name);
     if (m) m.to = s.to; else mins.push({ name: s.name, from: s.from, to: s.to });
   }
-  if (mins.length) card.append(el("div", { class: "sub lbl" }, "Ministers heard:"),
+  if (mins.length) out.push(el("div", { class: "sub lbl" }, "Ministers heard:"),
     el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, `${m.name} (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`))));
   // bottom row. Left: the Bible readings so far (analyze\live.py, the after-service finder on the words spoken).
   // Right: people watching (Vimeo) and listening (Radio Mast), read once a minute (Watch-Viewers.ps1). Total = both
   // at the same reading; its Max is the most together at one time.
-  const rd = (L.readings || []).map(r => `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`);
+  const rd = (L.readings || []).filter(Boolean).map(r => `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`);
   let counts = null;
-  const V = state.watching;
-  if (V && V.active && V.run_key === L.run_key) {
-    const fresh = (x) => x && x.at && (Date.now() - new Date(x.at)) / 1000 < 300;
+  if (V) {
+    const fresh = (x) => x && (ended ? x.current != null : x.at && (Date.now() - new Date(x.at)) / 1000 < 300);
     const v = fresh(V.video) ? V.video : null, a = fresh(V.audio) ? V.audio : null;
     const t = fresh(V.total) ? V.total : (v && a ? { current: v.current + a.current, peak: null } : null);
     if (v || a) {
       const row = (name, x, cls) => el("tr", cls ? { class: cls } : {}, el("th", {}, name),
         el("td", {}, x ? String(x.current) : "–"), el("td", {}, x && x.peak != null ? String(x.peak) : "–"));
+      // after the service "Current" is the last reading, taken as the stream stopped
       counts = el("table", { class: "counts" },
-        el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, "Current"), el("th", {}, "Max"))),
+        el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, ended ? "At the end" : "Current"), el("th", {}, "Max"))),
         el("tbody", {}, row("Video", v), row("Audio", a), row("Total", t, "tot")));
     }
   }
   if (rd.length || counts)
-    card.append(el("div", { class: "livefoot" },
+    out.push(el("div", { class: "livefoot" },
       el("div", { class: "readings" }, rd.length ? el("strong", {}, rd.join(" · ")) : ""), counts || el("span", {})));
-  return card;
+  return out;
 }
 
 // ------------------------------------------------------------------ Sanctuary mixer (Russ, 2026-11-15: "add the muting
@@ -1652,7 +1681,12 @@ async function demoLoad() {
     hymns: [{ number: "93", hymnal: "Hymns of Zion", title: "I Need Thee Every Hour", time: "10:01", how: "announced" }, { number: "5", hymnal: "Hymns of Zion", title: "O Worship the King", time: "10:16", how: "announced #5 Hymns of Zion (0.8)" }, { number: "?", hymnal: "", title: "", time: "11:08", how: "singing 124 s" }] };
   const bad = allOk(t(12, 8)).map(s => s.key === "vimeo" ? { ...s, status: "failed", detail: "Vimeo upload failed: uploaded, but its link could not be read." } : s.key === "accentral" ? { ...s, status: "skipped", detail: "Not created because the Vimeo upload failed." } : s);
   state.runs = [
-    { run_key: "2026-11-08_SunPM", run_date: "2026-11-08", service_id: "SunPM", service_name: "Sunday PM", steps: allOk(t(14, 23)), summary: { ...sum, speaker: "Doug Moser", readings: ["Psalms 122:1-9", "Matthew 18:15-17"] } },
+    { run_key: "2026-11-08_SunPM", run_date: "2026-11-08", service_id: "SunPM", service_name: "Sunday PM", steps: allOk(t(14, 23)), summary: { ...sum, speaker: "Doug Moser", readings: ["Psalms 122:1-9", "Matthew 18:15-17"],
+      live: { hymns: [{ time: "12:18", number: "276", title: "O For a Thousand Tongues" }, { time: "12:21", number: "105", title: "I Will Sing the Wondrous Story" }, { time: "12:23", number: "191", title: "Sweet By and By" },
+          { time: "12:26", number: "216", title: "Hear Thou My Prayer" }, { time: "12:29", number: "159", title: "Self Sacrifice" }, { time: "12:58", number: "160", title: "The Believing Family" }, { time: "13:19", number: "32", title: "Who Shall Abide" }],
+        speakers: [{ name: "UNKNOWN", from: "12:18:41", to: "12:33:22" }, { name: "Doug Moser", from: "12:33:32", to: "13:17:02" }, { name: "Chris Westerman", from: "13:17:13", to: "13:23:21" }, { name: "Doug Moser", from: "13:25:50", to: "13:26:00" }],
+        readings: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9 }],
+        viewers: { video: { current: 1, peak: 4 }, audio: { current: 6, peak: 10 }, total: { current: 7, peak: 12 } } } } },
     { run_key: "2026-11-08_SunAM", run_date: "2026-11-08", service_id: "SunAM", service_name: "Sunday AM", steps: bad, summary: sum },
     { run_key: "2026-11-04_WedPM", run_date: "2026-11-04", service_id: "WedPM", service_name: "Wednesday Evening", steps: allOk(t(21, 17)), summary: { ...sum, speaker: "Adam Zeltwanger", readings: ["Exodus 27:1-21", "Revelation 21:1-7"] } }];
   state.tests = []; state.requests = []; state.stops = []; state.pcSeen = new Date(Date.now() - 40e3);
