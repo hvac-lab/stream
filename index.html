@@ -115,7 +115,9 @@
   .live .now .what { display: block; font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   .live .off { color: var(--muted); font-weight: 600; } .live .now.off { font-size: 17px; }
   .live .sub { color: var(--ink-2); font-size: 14px; font-weight: 400; margin-top: 3px; }
-  .live .viewers { display: flex; justify-content: flex-end; gap: 18px; font-size: 15px; color: var(--ink-2); margin-top: 6px; }
+  .live .livefoot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 18px; flex-wrap: wrap; margin-top: 6px; font-size: 15px; }
+  .live .readings strong { font-weight: 650; }
+  .live .viewers { display: flex; gap: 18px; margin-left: auto; color: var(--ink-2); }
   .live .viewers strong { color: var(--ink); font-weight: 700; }
   .ctl { margin-top: 14px; }
   .confirm { margin-top: 10px; padding: 12px; border: 1px solid var(--warning); border-radius: 12px; background: var(--warnbg); font-size: 14px; }
@@ -627,19 +629,26 @@ function liveCard() {
   const names = [];
   for (const s of L.speakers || []) if (s.name && s.name !== "UNKNOWN" && !names.some(n => n.name === s.name)) names.push(s);
   if (names.length) card.append(el("div", { class: "sub" }, "Ministers heard: " + names.map(s => `${s.name} (from ${String(s.from).slice(0, 5)})`).join(" · ")));
-  // people listening (Radio Mast) and watching (Vimeo) right now, read once a minute; bottom right of the card
-  // (Russ, 2026-11-18: "Audio: x  Video: y"). The most at one time shows on hover.
+  // bottom row. Left: the Bible readings so far (analyze\live.py, the after-service finder on the words spoken; Russ,
+  // 2026-11-18: "main books and chapters : verses on the bottom left"). Right: people listening (Radio Mast) and
+  // watching (Vimeo) right now, read once a minute (Russ, 2026-11-18: "Audio: x  Video: y"); the most at one time
+  // shows on hover.
+  const rd = (L.readings || []).map(r => `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`);
+  let counts = null;
   const V = state.watching;
   if (V && V.active && V.run_key === L.run_key) {
     const fresh = (x) => x && x.at && (Date.now() - new Date(x.at)) / 1000 < 300;
     const v = fresh(V.video) ? V.video : null, a = fresh(V.audio) ? V.audio : null;
     if (v || a) {
       const most = [a && a.peak ? `audio ${a.peak}` : null, v && v.peak ? `video ${v.peak}` : null].filter(Boolean);
-      card.append(el("div", { class: "viewers", title: most.length ? `Most at one time: ${most.join(", ")}` : "" },
+      counts = el("div", { class: "viewers", title: most.length ? `Most at one time: ${most.join(", ")}` : "" },
         a ? el("span", {}, "Audio: ", el("strong", {}, String(a.current))) : null,
-        v ? el("span", {}, "Video: ", el("strong", {}, String(v.current))) : null));
+        v ? el("span", {}, "Video: ", el("strong", {}, String(v.current))) : null);
     }
   }
+  if (rd.length || counts)
+    card.append(el("div", { class: "livefoot" },
+      el("div", { class: "readings" }, rd.length ? el("strong", {}, rd.join(" · ")) : ""), counts || el("span", {})));
   return card;
 }
 
@@ -887,7 +896,7 @@ function renderProcessMap() {
         step(4, "Audio streaming", "The PC starts Rocket Broadcaster at the same time; it sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
       phase("During", ["6 minutes in", ...list("check")],
         step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound (if the room is still quiet, it listens every minute and judges the radio once the service starts, up to 20 minutes); the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"]),
-        step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds, with how many people listen to the audio (Radio Mast) and watch the video (Vimeo) right now, read once a minute.", ["Rocket Broadcaster", "Vimeo", "Radio Mast", "Now tab"])),
+        step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds, with the Bible readings so far (a few minutes into each reading) and how many people listen to the audio (Radio Mast) and watch the video (Vimeo) right now, read once a minute.", ["Rocket Broadcaster", "Vimeo", "Radio Mast", "Now tab"])),
       phase("Stop", ["whichever comes first:", "5 min after the ministers walk off", "the Stop button", "the set time:", ...list("cutoff")],
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
@@ -1639,7 +1648,8 @@ async function demoLoad() {
   state.live = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 8e3).toISOString(), audioAt: new Date(Date.now() - 14e3).toISOString(), state: "singing",
     hymn: { number: "202", hymnal: "Zion's Harp", title: "Christ My All", how: "announced #202" },
     hymns: [{ time: "10:01", number: "153", hymnal: "Zion's Harp", title: "The Lord is My Shepherd" }, { time: "11:08", number: "202", hymnal: "Zion's Harp", title: "Christ My All" }],
-    speakers: [{ name: "Ben Furrer", from: "10:08:40", to: "10:52:10" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" } } : null;
+    speakers: [{ name: "Ben Furrer", from: "10:08:40", to: "10:52:10" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" },
+    readings: [{ book: "Psalms", chapter: 78, v0: 4, v1: 71, time: "10:37" }, { book: "John", chapter: 20, v0: 1, v1: 31, time: "10:57" }] } : null;
   state.watching = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 20e3).toISOString(),
     video: { current: 14, peak: 17, plays: 31, at: new Date(Date.now() - 20e3).toISOString() }, audio: { current: 6, peak: 8, at: new Date(Date.now() - 20e3).toISOString() } } : null;
   // sample sermons / hymns for the Stats and Copyright tabs
