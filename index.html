@@ -122,6 +122,7 @@
   .livebox .tag { font-size: 12px; } .livebox .tag::before { display: none; }
   .live .hymncols { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(var(--rows, 1), auto); grid-auto-flow: column; gap: 2px 24px; font-size: 14px; color: var(--ink-2); }
   .live .minlines { font-size: 14px; color: var(--ink-2); }
+  .live .minread { padding-left: 22px; font-weight: 650; color: var(--ink); }
   @media (max-width: 560px) { .live .hymncols { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; } }
   .live .livefoot { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px 18px; flex-wrap: wrap; margin-top: 10px; font-size: 15px; }
   .live .readings strong { font-weight: 650; }
@@ -681,12 +682,26 @@ function liveDetails(L, V, ended) {
     const m = mins.find(x => x.name === s.name);
     if (m) m.to = s.to; else mins.push({ name: s.name, from: s.from, to: s.to });
   }
+  // Bible readings (analyze\live.py, the after-service finder on the words spoken), each indented under the minister
+  // whose voice was heard when it began (Russ, 2026-11-18); one nobody is matched to stays at the bottom left.
+  const named = (L.speakers || []).filter(s => s.name && s.name !== "UNKNOWN");
+  const secs = (t) => { const p = String(t).split(":").map(Number); return p[0] * 3600 + p[1] * 60 + (p[2] || 0); };
+  const readerOf = (r) => {
+    if (!r.time || !named.length) return null;
+    const t = secs(r.time) + 30;   // "HH:MM" of the reading's start: the middle of that minute
+    const inSpan = named.find(s => secs(s.from) <= t && t <= secs(s.to));
+    if (inSpan) return inSpan.name;
+    let best = null, gap = 181;    // else the minister heard closest to it, within 3 minutes
+    for (const s of named) { const g = Math.min(Math.abs(secs(s.from) - t), Math.abs(secs(s.to) - t)); if (g < gap) { gap = g; best = s.name; } }
+    return best;
+  };
+  const reads = (L.readings || []).filter(Boolean).map(r => ({ text: `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`, who: readerOf(r) }));
   if (mins.length) out.push(el("div", { class: "sub lbl" }, "Ministers:"),
-    el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, `${m.name} (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`))));
-  // bottom row. Left: the Bible readings so far (analyze\live.py, the after-service finder on the words spoken).
-  // Right: people watching (Vimeo) and listening (Radio Mast), read once a minute (Watch-Viewers.ps1). Total = both
-  // in both columns (its Max = Video Max + Audio Max).
-  const rd = (L.readings || []).filter(Boolean).map(r => `${r.book} ${r.chapter}:${r.v0}${r.v1 && r.v1 !== r.v0 ? "-" + r.v1 : ""}`);
+    el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, `${m.name} (${String(m.from).slice(0, 5)} - ${String(m.to).slice(0, 5)})`,
+      ...reads.filter(x => x.who === m.name).map(x => el("div", { class: "minread" }, x.text))))));
+  // bottom row. Left: readings no minister is matched to. Right: people watching (Vimeo) and listening (Radio Mast),
+  // read once a minute (Watch-Viewers.ps1). Total = both in both columns (its Max = Video Max + Audio Max).
+  const rd = reads.filter(x => !x.who || !mins.some(m => m.name === x.who)).map(x => x.text);
   let counts = null;
   if (V) {
     const fresh = (x) => x && (ended ? x.current != null : x.at && (Date.now() - new Date(x.at)) / 1000 < 300);
@@ -1690,7 +1705,7 @@ async function demoLoad() {
       live: { hymns: [{ time: "12:18", number: "276", title: "O For a Thousand Tongues" }, { time: "12:21", number: "105", title: "I Will Sing the Wondrous Story" }, { time: "12:23", number: "191", title: "Sweet By and By" },
           { time: "12:26", number: "216", title: "Hear Thou My Prayer" }, { time: "12:29", number: "159", title: "Self Sacrifice" }, { time: "12:58", number: "160", title: "The Believing Family" }, { time: "13:19", number: "32", title: "Who Shall Abide" }],
         speakers: [{ name: "UNKNOWN", from: "12:18:41", to: "12:33:22" }, { name: "Doug Moser", from: "12:33:32", to: "13:17:02" }, { name: "Chris Westerman", from: "13:17:13", to: "13:23:21" }, { name: "Doug Moser", from: "13:25:50", to: "13:26:00" }],
-        readings: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9 }],
+        readings: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9, time: "12:36" }, { book: "Matthew", chapter: 18, v0: 15, v1: 17, time: "13:18" }],
         viewers: { video: { current: 1, peak: 4 }, audio: { current: 6, peak: 10 }, total: { current: 7, peak: 12 } } } } },
     { run_key: "2026-11-08_SunAM", run_date: "2026-11-08", service_id: "SunAM", service_name: "Sunday AM", steps: bad, summary: sum },
     { run_key: "2026-11-04_WedPM", run_date: "2026-11-04", service_id: "WedPM", service_name: "Wednesday Evening", steps: allOk(t(21, 17)), summary: { ...sum, speaker: "Adam Zeltwanger", readings: ["Exodus 27:1-21", "Revelation 21:1-7"] } }];
