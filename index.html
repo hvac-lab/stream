@@ -511,6 +511,7 @@ async function load() {
   state.mixer = m.mixer || null;   // Sanctuary mixer plan + results (Invoke-MixerSchedule.ps1, 2026-11-15)
   state.live = m.live || null;     // live speaker / hymn (Watch-Live.ps1 + analyze\live.py, 2026-11-15)
   state.comm = m.communication || null;   // standing parts of the weekly email (config\communication.json, 2026-11-22)
+  state.cal = m.calendar || null;         // the church Google Calendar, read hourly by the PC (Update-Calendar.ps1)
   state.watching = m.viewers || null;   // watching / listening now (stream_meta 'viewers'; state.viewers is the Viewers tab) (Watch-Viewers.ps1 + publish\live-viewers.js, 2026-11-18)
 }
 function setPc() {
@@ -960,6 +961,8 @@ function renderNow() {
 // service (scripts\Update-Announcements.ps1 -> analyze\announcements.py: the last minutes of the recording, read by
 // Claude; church names from AC Central's congregation list). Loaded when the tab opens, again every 5 minutes.
 async function loadAnn() {
+  // demo + &calfile=<same-site json>: a test copy of the church calendar (local testing only)
+  if (demo && params.get("calfile") && !state.cal) { try { state.cal = await (await fetch(params.get("calfile"), { cache: "no-store" })).json(); } catch {} }
   if (demo) { state.ann = demoAnn(); state.annAt = Date.now(); return; }
   const { data, error } = await state.sb.from("stream_announcements").select("service_date,am,pm,combined,updated_at")
     .order("service_date", { ascending: false }).limit(104);
@@ -1024,7 +1027,10 @@ const greetName = (g) => {
 // month and the next two that are there. Drawn at twice the size so it stays sharp; kept per content.
 const calCache = new Map();
 function calendarPicture(T, d) {
-  const cal = (T && T.calendar) || {};
+  // the church Google Calendar when the PC has read it (stream_meta 'calendar'), else the template's copy
+  const cal = (state.cal && state.cal.months) || (T && T.calendar) || {};
+  const collOf = (m) => ((state.cal && state.cal.collections) || {})[`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`]
+    || ((T && T.collections) || {})[String(m.getMonth() + 1)];
   const months = [];
   for (let i = 0; i < 3; i++) {
     const m = new Date(d.getFullYear(), d.getMonth() + i, 1);
@@ -1032,7 +1038,7 @@ function calendarPicture(T, d) {
     if (cal[k]) months.push([m, cal[k]]);
   }
   if (!months.length) return null;
-  const key = JSON.stringify([months.map(([m, e]) => [m.getTime(), e]), T.collections || {}]);
+  const key = JSON.stringify(months.map(([m, e]) => [m.getTime(), e, collOf(m)]));
   if (calCache.has(key)) return calCache.get(key);
   const S = 2, W = 900, cw = W / 7, top = 18, head = 56, wk = 26, minRow = 100, lineH = 15, gap = 22;
   const rowsOf = (m) => Math.ceil((m.getDay() + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7);
@@ -1061,7 +1067,7 @@ function calendarPicture(T, d) {
     g.strokeRect(0.5, y + 0.5, W - 1, head);
     g.fillStyle = "#111"; g.textAlign = "center"; g.font = "bold 26px Arial, sans-serif";
     g.fillText(m.toLocaleDateString("en-US", { month: "long", year: "numeric" }), W / 2, y + 30);
-    const coll = (T.collections || {})[String(m.getMonth() + 1)];
+    const coll = collOf(m);
     if (coll) {
       g.textAlign = "left"; g.font = "bold 12px Arial, sans-serif"; g.fillText("Monthly Collection = ", 8, y + 48);
       const w0 = g.measureText("Monthly Collection = ").width; g.font = "12px Arial, sans-serif"; g.fillText(coll, 8 + w0, y + 48);
@@ -1110,9 +1116,29 @@ function commHtml(row) {
   if (am.length) rd.push(`Our morning scripture reading was from ${esc(join(am))}.`);
   if (pm.length) rd.push(`In the afternoon, we read from ${esc(join(pm))}.`);
   const notes = (both.announcements || []).map(a => esc(a.text));
+  // calendar events whose description starts "Announce:" (Russ, 2026-11-22), from 2 weeks before until the day
+  const sunday = row.service_date, in14 = ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 14));
+  const longDay = (s) => parseYmd(s).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}">${u}</a>`).replace(/\n/g, "<br>");
+  for (const n of ((state.cal && state.cal.notes) || []).filter(n => n.date >= sunday && n.date <= in14))
+    notes.push(`<b>${esc(n.title)}</b> – ${longDay(n.date)}${n.time ? ", " + esc(n.time) : ""}: ${linkify(n.text)}`);
+  // Lookaheads from the calendar: one-time events after the picture's 3 months, up to a year ahead, the same title on
+  // one line (Russ: repeating ones "after 3 months, we don't need to know. But there might be something in the Summer")
+  let looks = T.lookaheads || [];
+  if (state.cal && state.cal.events) {
+    const after = ymd(new Date(d.getFullYear(), d.getMonth() + 3, 1)), until = ymd(new Date(d.getFullYear() + 1, d.getMonth(), d.getDate()));
+    const groups = new Map();
+    for (const e of state.cal.events) {
+      if (e.date < after || e.date > until) continue;
+      const g = groups.get(e.title) || { title: e.title, time: e.time, dates: [] };
+      g.dates.push(e.date); if (g.time !== e.time) g.time = ""; groups.set(e.title, g);
+    }
+    const day = (x) => { const t = parseYmd(x); return t.toLocaleDateString("en-US", t.getFullYear() !== d.getFullYear() ? { month: "long", day: "numeric", year: "numeric" } : { month: "long", day: "numeric" }); };
+    looks = [...groups.values()].map(g => `<b>${esc(g.title)}</b>${g.time ? " (" + esc(g.time) + ")" : ""}: ${g.dates.map(day).join(", ")}`);
+  }
   const greet = (both.greetings || []).map(g => g.church ? esc(greetName(g)) : esc(g.heard));
-  const coll = (T.collections || {})[String(d.getMonth() + 1)];
-  const blank = `<span style="color:#888">(add here)</span>`;
+  const coll = ((state.cal && state.cal.collections) || {})[row.service_date.slice(0, 7)] || (T.collections || {})[String(d.getMonth() + 1)];
+  const blank =`<span style="color:#888">(add here)</span>`;
   const pic = calendarPicture(T, d);
   const calImg = pic ? `<p style="margin:14px 0 4px"><img src="${pic.url}" width="${pic.width}" alt="Calendar" style="max-width:100%; height:auto; display:block; border:0"></p>` : "";
   return `<div style="${COMM_FONT}">` +
@@ -1126,7 +1152,7 @@ function commHtml(row) {
     calImg +
     (greet.length ? H("Greetings were received from:") + ul(greet) : "") +
     (coll && !pic ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${esc(coll)}</p>` : "") +
-    ((T.lookaheads || []).length ? H("Lookaheads") + ul(T.lookaheads) : "") +
+    (looks.length ? H("Lookaheads") + ul(looks) : "") +
     ((T.churchInfo || []).length ? H("Church Service Information:") + ul(T.churchInfo) : "") +
     ((T.ministers || []).length ? H("Minister Contact Information:") + ul(T.ministers.map(m => `${esc(m.name)}${ul(m.lines || [])}`)) : "") +
     (Object.keys(T.collections || {}).length ? `<p style="margin:14px 0 4px"><u>Monthly <b>charity collections</b> are scheduled as follows:</u></p>` +
