@@ -1212,6 +1212,8 @@ function commHtml(row) {
     // greetings are on their own tab for now (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab")
     (coll && !pic ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${esc(coll)}</p>` : "") +
     (looks.length ? H("Lookaheads") + ul(looks) : "") +
+    // a solid line above the parts that stay the same every week (Russ, 2026-11-22)
+    `<hr style="border:0; border-top:2px solid #111; margin:22px 0 8px">` +
     ((T.churchInfo || []).length ? H("Church Service Information:") + ul(T.churchInfo) : "") +
     ((T.ministers || []).length ? H("Minister Contact Information:") + ul(T.ministers.map(m => `${esc(m.name)}${ul(m.lines || [])}`)) : "") +
     (Object.keys(T.collections || {}).length ? `<p style="margin:14px 0 4px"><u>Monthly <b>charity collections</b> are scheduled as follows:</u></p>` +
