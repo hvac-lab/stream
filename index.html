@@ -1168,8 +1168,11 @@ function commHtml(row) {
   const both = row.combined || {};
   const am = readings("SunAM"), pm = readings("SunPM");
   const rd = [];
-  if (am.length) rd.push(`Our morning scripture reading was from ${esc(join(am))}.`);
-  if (pm.length) rd.push(`In the afternoon, we read from ${esc(join(pm))}.`);
+  // book and chapter bold, the verses plain: "<b>Genesis 7</b>:1-24" (Russ, 2026-11-22: "Bold the book and chapter")
+  const boldRef = (r) => { const m = String(r).match(/^(.+?\s\d+)(:.*)?$/); return m ? `<b>${esc(m[1])}</b>${esc(m[2] || "")}` : esc(r); };
+  const joinB = (a) => a.length < 2 ? (a[0] ? boldRef(a[0]) : "") : a.slice(0, -1).map(boldRef).join(", ") + " and " + boldRef(a[a.length - 1]);
+  if (am.length) rd.push(`Our morning scripture reading was from ${joinB(am)}.`);
+  if (pm.length) rd.push(`In the afternoon, we read from ${joinB(pm)}.`);
   const notes = (both.announcements || []).map(a => linkNames(esc(a.text), T.links));
   // calendar events whose description starts "Announce:" (Russ, 2026-11-22), from 2 weeks before until the day
   const sunday = row.service_date, in14 = ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 14));
