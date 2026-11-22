@@ -650,7 +650,7 @@ function liveCard() {
     const h = L.hymn;
     now = el("div", { class: "now" }, el("span", { class: "what" }, "Singing"),
       h && h.number ? `#${h.number} ${h.title || ""}` : el("span", { class: "off" }, "hymn not known yet"),
-      h && h.hymnal ? el("span", { class: "sub" }, ` · ${h.hymnal}`) : null);
+      h && h.hymnal ? el("span", { class: "sub" }, ` · ${bookName(h)}`) : null);
   } else if (L.state === "speaking") {
     now = el("div", { class: "now" }, el("span", { class: "what" }, "Speaking"),
       L.speaker && L.speaker.known ? L.speaker.name : el("span", { class: "off" }, "a voice not on file"));
@@ -660,7 +660,7 @@ function liveCard() {
   const hy = (L.hymns || []).filter(h => h.number);
   const la = L.lastAnnounced;
   if (la && la.number && L.state !== "singing" && !hy.some(h => String(h.number) === String(la.number) && h.time >= la.time))
-    card.append(el("div", { class: "sub" }, `Announced at ${la.time}: #${la.number} ${la.title || ""}${la.hymnal ? " · " + la.hymnal : ""}`));
+    card.append(el("div", { class: "sub" }, `Announced at ${la.time}: #${la.number} ${la.title || ""}${la.hymnal ? " · " + bookName(la) : ""}`));
   const V = state.watching;
   card.append(...liveDetails(L, V && V.active && V.run_key === L.run_key ? V : null, false));
   return card;
@@ -692,8 +692,11 @@ function liveSummaryBox(run) {
 // Under step 7 each hymn shows its book instead of the time (Russ, 2026-11-19: "remove the 19:18 replace with the
 // name of the hymn book. Some will be Tabernacle Hymns"). The combined Hymns of Zion book continues into the
 // Tabernacle hymns from 303 on, so those say Tabernacle Hymns, with the number as it stands in the book.
+// 2026-11-22 (Russ: "Yes, Tabernacle Hymns"): the whole combined book is called Tabernacle Hymns at Morris North, so
+// its first part (Hymns of Zion 1-302, e.g. #99 The Solid Rock) says Tabernacle Hymns too. Only the label: the data,
+// the sheet and the copyright list keep the hymnal name "Hymns of Zion".
 const bookName = (h) => {
-  return h.hymnal === "Hymns of Zion" && parseInt(h.number, 10) > 302 ? "Tabernacle Hymns" : (h.hymnal || "");
+  return h && h.hymnal === "Hymns of Zion" ? "Tabernacle Hymns" : ((h && h.hymnal) || "");
 };
 function liveDetails(L, V, ended) {
   const out = [];
@@ -913,7 +916,7 @@ function renderHistory() {
 // What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
-const MAP_UPDATED = "2026-11-19";
+const MAP_UPDATED = "2026-11-22";
 // The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
 // stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
 function processSvg(K, svcs, t, short) {
@@ -1018,7 +1021,7 @@ function renderProcessMap() {
         step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound (if the room is still quiet, it listens every minute and judges the radio once the service starts, up to 20 minutes); the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"]),
         step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds, with the Bible readings so far (a few minutes into each reading) and how many people listen to the audio (Radio Mast) and watch the video (Vimeo) right now, read once a minute.", ["Rocket Broadcaster", "Vimeo", "Radio Mast", "Now tab"])),
       phase("Stop", ["whichever comes first:", "5 min after the ministers walk off", "the Stop button", "the set time:", ...list("cutoff")],
-        step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
+        step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. If the stream was already stopped, the set time does nothing more. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
         step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns. Before the service the hymn numbers are looked up in the Tabernacle / Hymns of Zion book first, from the hymn right before the service (5 min before a minister is first heard) in Zion's Harp first; a hymnal named in the announcement wins.", ["Church PC only"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
@@ -1032,7 +1035,7 @@ function renderProcessMap() {
       phase("Morning", ["10:00, then 10:10"],
         step(null, "Turned up", "AUXILIARY goes up to +10 dB at 10:00 and back to 0 dB at 10:10. It is unmuted already, from the Sunday before.", ["Soundcraft Ui mixer"])),
       phase("After the AM service", ["watching from 11:00", "11:45 at the latest"],
-        step(null, "Muted", "The PC watches the platform in the camera picture. When the ministers have walked off and it stays empty for 5 minutes (a kneeling prayer is shorter), AUXILIARY is muted. If the camera does not see them leave, it is muted at 11:45 and you get a text.", ["Camera", "Soundcraft Ui mixer"])),
+        step(null, "Muted", "The PC watches the platform in the camera picture. When the ministers have walked off and it stays empty for 2 minutes (a kneeling prayer is shorter), AUXILIARY is muted; the stream stops after 5. If the camera does not see them leave, it is muted at 11:45 and you get a text.", ["Camera", "Soundcraft Ui mixer"])),
       phase("Afternoon", ["12:15, then 12:25"],
         step(null, "Unmuted, turned up", "AUXILIARY is unmuted and goes up to +10 dB at 12:15, back to 0 dB at 12:25. It stays unmuted until the next Sunday.", ["Soundcraft Ui mixer"])),
       phase("All morning", ["9:30 to 12:35", "every 2 minutes"],
