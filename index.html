@@ -192,6 +192,17 @@
   .ann ul { margin: 0; padding-left: 20px; } .ann li { margin: 3px 0; }
   .ann .anntag { margin-left: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
   .ann .annfoot { margin: 12px 0 0; }
+  .calreq textarea.praybox { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.4; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
+  .calreq .calbox { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px; }
+  .calreq .calwords { margin: 0; font-size: 14px; }
+  .calreq .calqs { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; color: var(--ink-2); }
+  .calreq .calscroll { overflow-x: auto; }
+  .calreq table.calops { border-collapse: collapse; font-size: 13px; min-width: 640px; }
+  .calreq table.calops th { text-align: left; font-weight: 600; color: var(--ink-2); padding: 2px 4px; }
+  .calreq table.calops td { padding: 2px 4px; vertical-align: middle; }
+  .calreq table.calops input[type=text] { width: 100%; min-width: 9em; }
+  .calreq table.calops input, .calreq table.calops select { font: inherit; font-size: 13px; padding: 3px 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); box-sizing: border-box; }
+  .calreq table.calops tr.calwhy td { color: var(--ink-2); font-size: 12px; padding-bottom: 6px; }
   .ann .praywrap textarea.praybox { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.4; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
   .ann details.annmail { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
   .ann details.annmail > summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
@@ -1035,10 +1046,105 @@ function renderGreetings() {
   }
   screen(...kids);
 }
+// "Calendar changes" (Russ, 2026-11-22: "add a text box for lunch swaps, up and coming events to add to calendar, etc.
+// Button to prepare allow the user to view and edit, then confirm which will add/change/delete from the calendar").
+// Prepare -> stream_request_calendar; the church PC (Calendar-Requests.ps1, every minute) has Claude list the changes
+// against the real calendar; the list is shown here to edit; Confirm -> stream_confirm_calendar; the PC applies it.
+// Nothing changes on the calendar before Confirm. supabase\stream_status_10.sql.
+const CALREQ_STATUS = { pending: "Waiting for the church PC (it checks every minute)…", preparing: "The church PC is preparing the list…",
+  proposed: "Ready: check and edit the list, then Confirm.", confirmed: "Confirmed: waiting for the church PC…", applying: "The church PC is changing the calendar…",
+  done: "Done.", failed: "Not done.", cancelled: "Cancelled." };
+async function loadCalReqs() {
+  if (demo) { state.calReqs = state.calReqs || demoCalReqs(); return; }
+  const { data, error } = await state.sb.from("stream_calendar_requests")
+    .select("id,text,status,proposal,ops,result,note,requested_by,requested_at,confirmed_by").order("id", { ascending: false }).limit(4);
+  state.noCalReq = !!error; state.calReqs = data || [];
+}
+function calReqPoll() {
+  const busy = (state.calReqs || []).some(r => ["pending", "preparing", "confirmed", "applying"].includes(r.status));
+  if (!busy || state.calPollT || demo) return;
+  state.calPollT = setTimeout(async () => { state.calPollT = null; try { await loadCalReqs(); } catch {} if (state.tab === "announcements") render(); calReqPoll(); }, 5000);
+}
+function demoCalReqs() {
+  return [{ id: 1, status: "proposed", requested_by: "demo", text: "Adam Zeltwanger and Carter Feuchtenberger switched lunch (Dec 6 and Dec 13). Add Ladies Bible Study Sat Jan 9, 9-10:30 at church.",
+    note: "Prepared: 3 change(s). Check, edit, then Confirm.", proposal: { questions: [], ops: [
+      { op: "change", title: "Lunch: Carter Feuchtenberger", date: "2026-12-06", start: "", end: "", location: "", description: "", why: "Lunch swap: Carter takes Dec 6", orig: { title: "Lunch: Adam Zeltwanger", date: "2026-12-06", start: "", end: "" } },
+      { op: "change", title: "Lunch: Adam Zeltwanger", date: "2026-12-13", start: "", end: "", location: "", description: "", why: "Lunch swap: Adam takes Dec 13", orig: { title: "Lunch: Carter Feuchtenberger", date: "2026-12-13", start: "", end: "" } },
+      { op: "add", title: "Ladies Bible Study", date: "2027-01-09", start: "09:00", end: "10:30", location: "Church", description: "", why: "New event" }] } }];
+}
+function calChangesCard() {
+  if (!state.calReqs && !state.calLoading) { state.calLoading = true; loadCalReqs().catch(() => { state.noCalReq = true; }).finally(() => { state.calLoading = false; render(); }); }
+  const card = el("section", { class: "card calreq" }, el("h3", {}, "Calendar changes"));
+  if (state.noCalReq) { card.append(el("p", { class: "hint" }, "Coming soon (the database part is not set up yet).")); return card; }
+  card.append(el("p", { class: "hint", style: "margin-top:0" }, "Lunch swaps, coming events, something moved or cancelled: write it in plain words and press Prepare. ",
+    "The church PC lists the changes for you to check and edit. Nothing changes on the church calendar until you press Confirm."));
+  const ta = el("textarea", { class: "praybox", rows: "3", placeholder: "e.g. Adam Zeltwanger and Carter Feuchtenberger switched lunch (Dec 6 and Dec 13). Add Ladies Bible Study, Sat Jan 9, 9:00-10:30 at church. The Jan 24 singing is cancelled." });
+  ta.value = state.calDraft || "";
+  ta.addEventListener("input", () => { state.calDraft = ta.value; });
+  const msg = el("span", { class: "hint" });
+  const prep = el("button", { class: "small", onclick: async () => {
+    const text = ta.value.trim();
+    if (!text) { msg.textContent = "Write what should change first."; return; }
+    if (demo) { msg.textContent = "Demo: the church PC would prepare the list."; return; }
+    prep.disabled = true; msg.textContent = "Sending…";
+    const { data: id, error } = await state.sb.rpc("stream_request_calendar", { p_text: text });
+    prep.disabled = false;
+    if (error) { msg.textContent = "Not sent: " + error.message; return; }
+    state.calDraft = ""; await loadCalReqs(); render(); calReqPoll();
+  } }, "Prepare");
+  card.append(ta, el("div", { class: "mailbar" }, prep, msg));
+  state.calEdit = state.calEdit || {};
+  for (const r of (state.calReqs || []).slice(0, 3)) card.append(calReqBox(r));
+  calReqPoll();
+  return card;
+}
+function calReqBox(r) {
+  const box = el("div", { class: "calbox" });
+  const when = r.requested_at ? ` · ${fmtDate(new Date(r.requested_at))} ${fmtTime(new Date(r.requested_at))}` : "";
+  box.append(el("p", { class: "calwords" }, `“${r.text}”`, el("span", { class: "hint" }, ` ${r.requested_by || ""}${when}`)));
+  box.append(el("p", { class: "hint", style: "margin:2px 0 6px" }, CALREQ_STATUS[r.status] || r.status, r.note && r.status !== "proposed" ? " " + r.note : ""));
+  if (r.status === "proposed") {
+    const ops = state.calEdit[r.id] = state.calEdit[r.id] || ((r.proposal || {}).ops || []).map(o => Object.assign({ use: true }, o));
+    const qs = (r.proposal || {}).questions || [];
+    if (qs.length) box.append(el("ul", { class: "calqs" }, ...qs.map(q => el("li", {}, q))));
+    const field = (o, k, type, ph, w) => { const i = el("input", { type, placeholder: ph || "", style: w ? `width:${w}` : null }); i.value = o[k] || ""; i.addEventListener("input", () => { o[k] = i.value; }); return i; };
+    const tbl = el("table", { class: "calops" }, el("tr", {}, ...["", "Change", "Date", "From", "To", "Title", "Where"].map(h => el("th", {}, h))));
+    ops.forEach(o => {
+      const use = el("input", { type: "checkbox" }); use.checked = o.use !== false; use.addEventListener("change", () => { o.use = use.checked; });
+      const kind = el("select", {}, ...["add", "change", "delete"].map(k => { const op = el("option", { value: k }, k === "add" ? "Add" : k === "change" ? "Change" : "Delete"); if (o.op === k) op.selected = true; return op; }));
+      kind.addEventListener("change", () => { o.op = kind.value; });
+      if (!o.id) [...kind.options].forEach(op => { if (op.value !== "add") op.disabled = true; });
+      tbl.append(el("tr", {}, el("td", {}, use), el("td", {}, kind), el("td", {}, field(o, "date", "date")), el("td", {}, field(o, "start", "time", "", "6.5em")),
+        el("td", {}, field(o, "end", "time", "", "6.5em")), el("td", {}, field(o, "title", "text", "Title")), el("td", {}, field(o, "location", "text", ""))));
+      const was = o.orig ? `was: ${o.orig.date} ${o.orig.start ? o.orig.start + " " : ""}${o.orig.title}` : "";
+      if (was || o.why) tbl.append(el("tr", { class: "calwhy" }, el("td", {}), el("td", { colspan: "6" }, [was, o.why].filter(Boolean).join(" · "))));
+    });
+    box.append(el("div", { class: "calscroll" }, tbl));
+    const cmsg = el("span", { class: "hint" });
+    const confirm = el("button", { class: "small", onclick: async () => {
+      const send = ops.filter(o => o.use !== false).map(({ use, ...o }) => o);
+      if (!send.length) { cmsg.textContent = "Nothing is ticked."; return; }
+      if (demo) { cmsg.textContent = `Demo: ${send.length} change(s) would go to the church calendar.`; return; }
+      confirm.disabled = true; cmsg.textContent = "Sending…";
+      const { error } = await state.sb.rpc("stream_confirm_calendar", { p_id: r.id, p_ops: send });
+      confirm.disabled = false;
+      if (error) { cmsg.textContent = "Not confirmed: " + error.message; return; }
+      delete state.calEdit[r.id]; await loadCalReqs(); render(); calReqPoll();
+    } }, "Confirm");
+    const cancel = el("button", { class: "small", onclick: async () => {
+      if (demo) { cmsg.textContent = "Demo: cancelled."; return; }
+      await state.sb.rpc("stream_cancel_calendar", { p_id: r.id }); delete state.calEdit[r.id]; await loadCalReqs(); render();
+    } }, "Cancel");
+    box.append(el("div", { class: "mailbar" }, confirm, cancel, cmsg));
+  } else if (Array.isArray(r.result) && r.result.length) {
+    box.append(el("ul", { class: "calqs" }, ...r.result.map(x => el("li", {}, `${x.ok ? "✓" : "✗"} ${x.op === "add" ? "Added" : x.op === "change" ? "Changed" : x.op === "delete" ? "Deleted" : x.op}: ${x.title || ""}${x.ok ? "" : " — " + (x.error || "")}`))));
+  }
+  return box;
+}
 function renderAnnouncements() {
   if (!state.ann) return screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading the announcements…")));
   // no explanation card at the top (Russ, 2026-11-22: "Remove Announcements Sundays only. ...")
-  const kids = [];
+  const kids = [calChangesCard()];
   if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No Sundays yet.")));
   state.annView = state.annView || {};
   for (const row of state.ann) {
@@ -1574,7 +1680,7 @@ function renderProcessMap() {
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. If the stream was already stopped, the set time does nothing more. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
         step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns. Before the service the hymn numbers are looked up in the Tabernacle / Hymns of Zion book first, from the hymn right before the service (5 min before a minister is first heard) in Zion's Harp first; a hymnal named in the announcement wins.", ["Church PC only"]),
-        step(null, "Announcements (Sundays)", "From the last minutes of the recording the PC sends only the words after the closing prayer to Claude, which lists the greetings from other churches (names and places from AC Central's church list) and the announcements. After the afternoon service the morning's and afternoon's are combined, each once, on the Announcements tab (with the weekly email, its calendar from the church Google Calendar, read every minute on Sunday afternoons, hourly otherwise); the greetings on the Greetings tab. Food for Thought and Prayer Requests are filled in with Edit in the email (prayer requests carried from the week before). \"Create draft\" has the PC save the email as a Gmail draft in mnorthacc@gmail.com within a minute; a person adds the recipients and sends it. After the afternoon service, dated events in the announcements that are not on the church calendar yet are added to it automatically, and a phone text lists them (delete any that were misheard). After each Sunday service the PC also reads last week's sent email: its New Notes that still hold are merged with what was said over the pulpit (each item once), its upcoming events go on the calendar, its prayer requests into this week's list.", ["Claude API", "Google Calendar", "Gmail (mnorthacc)", "Announcements tab"]),
+        step(null, "Announcements (Sundays)", "From the last minutes of the recording the PC sends only the words after the closing prayer to Claude, which lists the greetings from other churches (names and places from AC Central's church list) and the announcements. After the afternoon service the morning's and afternoon's are combined, each once, on the Announcements tab (with the weekly email, its calendar from the church Google Calendar, read every minute on Sunday afternoons, hourly otherwise); the greetings on the Greetings tab. Food for Thought and Prayer Requests are filled in with Edit in the email (prayer requests carried from the week before). \"Create draft\" has the PC save the email as a Gmail draft in mnorthacc@gmail.com within a minute; a person adds the recipients and sends it. After the afternoon service, dated events in the announcements that are not on the church calendar yet are added to it automatically, and a phone text lists them (delete any that were misheard). After each Sunday service the PC also reads last week's sent email: its New Notes that still hold are merged with what was said over the pulpit (each item once), its upcoming events go on the calendar, its prayer requests into this week's list. \"Calendar changes\" at the top of the tab: lunch swaps and coming events written in plain words; the PC lists the changes, a person checks and edits them and presses Confirm, then the PC changes the church calendar (repeating entries are changed in Google Calendar itself).", ["Claude API", "Google Calendar", "Gmail (mnorthacc)", "Announcements tab"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
         step(9, "Video uploaded to Vimeo", "Uploads the trimmed video, unlisted, to the Morris North folder.", ["Vimeo"]),
         step(10, "Sermon entry on AC Central", "Adds the sermon: date, service, minister, readings, the audio file and the video link.", ["AC Central"]),
