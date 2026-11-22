@@ -1018,7 +1018,11 @@ function renderAnnouncements() {
       el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date))), el("span", { class: "hint" }, status), switcher),
       missing,
       el("h4", {}, `Announcements · ${anns.length}`),
-      anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => el("li", {}, a.text, tag(a.from)))) : el("p", { class: "hint" }, "None."),
+      anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => {
+        const s = document.createElement("span"); s.innerHTML = linkNames(String(a.text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])), commLinks());
+        s.querySelectorAll("a").forEach(x => { x.target = "_blank"; x.rel = "noopener"; });
+        return el("li", {}, s, tag(a.from));
+      })) : el("p", { class: "hint" }, "None."),
       // the greetings moved to their own tab (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab for now")
       win ? el("p", { class: "hint annfoot" }, `From the recording: ${win}. Read by Claude from the speech-to-text; check anything important.`) : null,
       commEmail(row)));
@@ -1034,6 +1038,17 @@ function renderAnnouncements() {
 // greetings received, the month's collection, Lookaheads, Church Service Information, Minister Contact Information,
 // the year's collections. The standing parts come from stream_meta 'communication' (config\communication.json), so
 // no phone number or email address is in this public page. Edits stay in this browser (per date) until "Reset".
+// names linked in the announcements (template "links", e.g. Harvest Call -> harvestcall.org; Russ 2026-11-22: "Link
+// the name Harvest Call website"): the longest name first, any case, never inside an existing tag or link. html = escaped.
+function linkNames(html, links) {
+  const keys = Object.keys(links || {}).filter(k => !k.startsWith("_")).sort((a, b) => b.length - a.length);
+  if (!keys.length) return html;
+  const re = new RegExp(keys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  const url = Object.fromEntries(keys.map(k => [k.toLowerCase(), links[k]]));
+  return html.split(/(<a\b[^>]*>[\s\S]*?<\/a>|<[^>]+>)/i)
+    .map(part => part.startsWith("<") ? part : part.replace(re, m => `<a href="${url[m.toLowerCase()]}">${m}</a>`)).join("");
+}
+const commLinks = () => ((state.comm || (demo ? DEMO_COMM : {})) || {}).links || {};
 // a greeting as "Church, ST": the church's name and the state from its place ("West Lafayette, IN", "Rochester, MN")
 const greetName = (g) => {
   const st = String(g.place || "").split(",").pop().trim();
@@ -1145,13 +1160,13 @@ function commHtml(row) {
   const rd = [];
   if (am.length) rd.push(`Our morning scripture reading was from ${esc(join(am))}.`);
   if (pm.length) rd.push(`In the afternoon, we read from ${esc(join(pm))}.`);
-  const notes = (both.announcements || []).map(a => esc(a.text));
+  const notes = (both.announcements || []).map(a => linkNames(esc(a.text), T.links));
   // calendar events whose description starts "Announce:" (Russ, 2026-11-22), from 2 weeks before until the day
   const sunday = row.service_date, in14 = ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 14));
   const longDay = (s) => parseYmd(s).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}">${u}</a>`).replace(/\n/g, "<br>");
   for (const n of ((state.cal && state.cal.notes) || []).filter(n => n.date >= sunday && n.date <= in14))
-    notes.push(`<b>${esc(n.title)}</b> – ${longDay(n.date)}${n.time ? ", " + esc(n.time) : ""}: ${linkify(n.text)}`);
+    notes.push(`<b>${esc(n.title)}</b> – ${longDay(n.date)}${n.time ? ", " + esc(n.time) : ""}: ${linkNames(linkify(n.text), T.links)}`);
   // Lookaheads from the calendar: one-time events after the picture's 3 months, up to a year ahead, the same title on
   // one line (Russ: repeating ones "after 3 months, we don't need to know. But there might be something in the Summer")
   let looks = T.lookaheads || [];
@@ -1207,6 +1222,7 @@ const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building F
   lookaheads: ["<b>Communion</b> at Morris North = April 10, 2027"],
   churchInfo: ["Morris North Apostolic Christian Church address: <b>418 Birch Ave</b>, Morris, MN 56267"],
   ministers: [{ name: "(the ministers' phone numbers and emails come from the template on the PC)", lines: [] }],
+  links: { "Harvest Call website": "https://www.harvestcall.org", "Harvest Call": "https://www.harvestcall.org" },
   shortNames: { "Wednesday Evening Service": "Church", "Church Services in Rochester - Morris North's Turn": "Rochester Church (our turn)", "Brookings Church — Morris North's Turn": "Brookings Church (our turn)",
     "Food Packing Event - Sharing Love & Hope": "Food Packing SLH", "Christmas Program - PM Service": "Christmas Program" },
   calendar: { "2026-11": { 1: ["Lunch: (family)"], 4: ["Brookings", "Church 7:00", "Church 7:30"], 8: ["Lunch: (family)", "Bible Class SLH 4:30"],
