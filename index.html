@@ -127,6 +127,13 @@
   .live .livetop { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 18px; flex-wrap: wrap; }
   .live .livetop .readings { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
   .live .livetop table.counts { margin-top: 8px; }
+  /* the live video: about twice the counts table (Russ, 2026-11-22); the player is #liveVideo on <body>, over the slot */
+  .live .livevideo { width: min(384px, 100%); aspect-ratio: 16 / 9; margin: 12px 0 4px; border-radius: 8px; background: #000;
+    display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 14px; }
+  #liveVideo { position: absolute; z-index: 5; border-radius: 8px; overflow: hidden; background: #000; }
+  #liveVideo iframe { width: 100%; height: 100%; border: 0; display: block; }
+  #liveVideo .lvsound { position: absolute; right: 8px; bottom: 8px; padding: 2px 8px; font-size: 18px; line-height: 1.3;
+    background: rgba(0,0,0,.55); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 6px; cursor: pointer; }
   @media (max-width: 560px) { .live .hymncols { grid-template-columns: 1fr; grid-template-rows: none; grid-auto-flow: row; } }
   .live .livefoot { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px 18px; flex-wrap: wrap; margin-top: 10px; font-size: 15px; }
   .live .readings strong { font-weight: 650; }
@@ -173,6 +180,15 @@
   .pf.pass { background: var(--good); } .pf.fail { background: var(--critical); } .pf.run { background: var(--s1); } .pf.hand { background: var(--warning); }
   table.hist td.readings { min-width: 150px; }
   table.hist .ctr, table.hist th.ctr { text-align: center; font-variant-numeric: tabular-nums; }
+  /* Announcements tab (2026-11-22) */
+  .ann .annhead { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; }
+  .ann .annhead h3 { margin: 0; font-size: 18px; }
+  .ann .annview { margin-left: auto; display: flex; gap: 4px; }
+  .ann .annview button.on { background: var(--s1); color: #fff; border-color: var(--s1); }
+  .ann h4 { margin: 14px 0 4px; font-size: 13px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; }
+  .ann ul { margin: 0; padding-left: 20px; } .ann li { margin: 3px 0; }
+  .ann .anntag { margin-left: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
+  .ann .annfoot { margin: 12px 0 0; }
   table.hist .svc-under { display: none; color: var(--ink-2); font-size: 12px; margin-left: 14px; }
   table.hist tr.detailrow > td { background: var(--page); padding: 6px 12px 16px; }
   .two { display:grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
@@ -312,7 +328,7 @@ const demo = params.get("demo") === "1";
 const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
 // Ministers, Hymns and Bible were the three pages of one Stats tab until 2026-11-10 (Russ)
-const TABS = [["now", "Now"], ["history", "History"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
+const TABS = [["now", "Now"], ["history", "History"], ["announcements", "Announcements"],["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
 const STATS_TABS = { ministers: "minister", hymns: "hymn", bible: "readings" };
 const DATA_TABS = [...Object.keys(STATS_TABS), "copyright", "viewers"];   // need loadStats()
 const oldTab = (t) => t === "stats" ? ({ hymn: "hymns", readings: "bible" }[store.get("statsView", "")] || "ministers") : t;
@@ -335,7 +351,59 @@ applyTheme();
 // ------------------------------------------------------------------ helpers
 const main = $("#main");
 // redraws keep the scroll position (the page refreshes itself and after each button)
-const screen = (...kids) => { const y = window.scrollY; main.replaceChildren(...kids.filter(k => k != null)); window.scrollTo(0, y); };
+const screen = (...kids) => { const y = window.scrollY; main.replaceChildren(...kids.filter(k => k != null)); window.scrollTo(0, y); liveVideoSync(); };
+
+// ------------------------------------------------------------------ live video (Russ, 2026-11-22: "show the video in
+// this box between the Ministers and Hymns so far. About twice the size of the current max table. Could it be live?")
+// The Vimeo live event AC Central embeds (stream_meta 'live'.video, from Watch-Live.ps1). It plays muted by itself;
+// Vimeo's own volume button turns the sound on. The page is rebuilt every 5 s during a service and a moved iframe reloads,
+// so the player is one element on <body>, laid over the place holder #liveVideoSlot after every rebuild, scroll
+// and resize. Gone for a minute (other tab, browser tab hidden, service over): the player is removed.
+// Tested live on 2026-11-22 PM (12:28-12:36): with dnt=1 neither two background-mode nor two normal players raised
+// Vimeo's viewers.current (stayed 1), so the page's players are not counted as people watching (only "plays" grew).
+// The normal player is used: muted by itself, with Vimeo's own volume button. &bg=1 = background mode + our button.
+const LIVE_VIDEO_BG = params.get("bg") === "1";
+const LV = { box: null, frame: null, key: null, goneAt: null, muted: true, player: null };
+function liveVideoSrc(u) {
+  return u + (u.includes("?") ? "&" : "?") + (LIVE_VIDEO_BG ? "background=1&" : "") + "autoplay=1&muted=1&dnt=1";
+}
+function liveVideoDrop() {
+  if (LV.box) LV.box.remove();
+  Object.assign(LV, { box: null, frame: null, key: null, goneAt: null, muted: true, player: null });
+}
+function liveVideoSound() {
+  LV.muted = !LV.muted;
+  const send = (method, value) => { try { LV.frame.contentWindow.postMessage(JSON.stringify({ method, value }), "*"); } catch {} };
+  send("setMuted", LV.muted); send("setVolume", LV.muted ? 0 : 1);
+  if (!LV.muted) send("play");
+  LV.btn.textContent = LV.muted ? "🔇" : "🔊";
+  LV.btn.title = LV.muted ? "Turn the sound on" : "Turn the sound off";
+}
+function liveVideoSync() {
+  const slot = document.getElementById("liveVideoSlot");
+  // demo: a grey place holder, or a real player with &video=<embed address> (for testing)
+  const src = !slot ? null : demo ? params.get("video") : slot.dataset.src;
+  if (!src || document.hidden) {
+    if (LV.box) { LV.box.style.display = "none"; LV.goneAt = LV.goneAt || Date.now(); if (Date.now() - LV.goneAt > 60000) liveVideoDrop(); }
+    return;
+  }
+  const key = (slot.dataset.run || "") + " " + src;
+  if (LV.key !== key) {
+    liveVideoDrop();
+    LV.key = key;
+    LV.frame = el("iframe", { src: liveVideoSrc(src), allow: "autoplay; fullscreen; picture-in-picture", allowfullscreen: "", title: "Live video", referrerpolicy: "strict-origin-when-cross-origin" });
+    LV.btn = el("button", { class: "lvsound", title: "Turn the sound on", onclick: liveVideoSound }, "🔇");
+    LV.box = el("div", { id: "liveVideo" }, LV.frame, LIVE_VIDEO_BG ? LV.btn : null);
+    document.body.append(LV.box);
+  }
+  LV.goneAt = null;
+  const r = slot.getBoundingClientRect();
+  Object.assign(LV.box.style, { display: "", top: `${r.top + window.scrollY}px`, left: `${r.left + window.scrollX}px`, width: `${r.width}px`, height: `${r.height}px` });
+}
+window.addEventListener("resize", () => liveVideoSync());
+if (window.ResizeObserver) new ResizeObserver(() => { if (LV.box) liveVideoSync(); }).observe(main);
+document.addEventListener("visibilitychange", () => liveVideoSync());
+setInterval(() => { if (LV.box) liveVideoSync(); }, 15000);
 const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseYmd = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
@@ -612,7 +680,8 @@ function renderTabs() {
   for (const [k, label] of TABS) {
     if (adminOnly.includes(k) && !state.admin) continue;
     nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { const stuck = tabsStuck(); state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); tabScroll(stuck);
-        if (DATA_TABS.includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
+        if (DATA_TABS.includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } }
+        if (k === "announcements" && !state.ann) { try { await loadAnn(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
       label, k === "tests" && testLive ? el("span", { class: "live", title: "a test is running" }) : null));
   }
 }
@@ -623,6 +692,7 @@ function render() {
   if (STATS_TABS[state.tab]) return renderStats();
   if (state.tab === "copyright") return renderCopyright();
   if (state.tab === "viewers") return renderViewers();
+  if (state.tab === "announcements") return renderAnnouncements();
   if (state.tab === "map") return renderProcessMap();
   if (state.tab === "tests") return renderTests();
   if (state.tab === "admin") return renderAdmin();
@@ -759,6 +829,10 @@ function liveDetails(L, V, ended) {
     }
   }
   if (left.length || counts) out.push(el("div", { class: "livetop" }, el("div", { class: "liveleft" }, ...left), counts || el("span", {})));
+  // the live video between the ministers and the hymns (Russ, 2026-11-22), only while the service runs: a place
+  // holder here, the player itself lives outside the page part that is rebuilt every 5 s (liveVideoSync)
+  if (!ended && L.video) out.push(el("div", { class: "livevideo", id: "liveVideoSlot", "data-src": L.video, "data-run": L.run_key || "" },
+    demo && !params.get("video") ? el("span", {}, "Live video") : null));
   if (hy.length) out.push(ended ? null : el("div", { class: "sub lbl" }, "Hymns so far:"),
     // under step 7 one column, oldest first, "Hymns of Zion - #291 - O For a Thousand Tongues" (Russ, 2026-11-19)
     ended ? el("div", { class: "hymnlist" }, ...hy.map(h => el("div", {}, [bookName(h), `#${h.number}`, h.title].filter(Boolean).join(" - "))))
@@ -856,6 +930,70 @@ function renderNow() {
   kids.push(nc);
   kids.push(el("p", { class: "hint", style: "text-align:center" }, `Updated ${fmtTime(new Date())} · refreshes by itself`));
   screen(...kids);
+}
+
+// ------------------------------------------------------------------ Announcements (Russ, 2026-11-22: "At the end of a
+// sermon, after we sing, pray, a minister will ask for greetings from other churches then read Announcements ... only
+// for Sundays. At the end of last sermon PM, combine the Announcements between the AM & PM ... a list of all the
+// unique greetings from other churches"). stream_announcements, one row per Sunday, written by the church PC after each
+// service (scripts\Update-Announcements.ps1 -> analyze\announcements.py: the last minutes of the recording, read by
+// Claude; church names from AC Central's congregation list). Loaded when the tab opens, again every 5 minutes.
+async function loadAnn() {
+  if (demo) { state.ann = demoAnn(); state.annAt = Date.now(); return; }
+  const { data, error } = await state.sb.from("stream_announcements").select("service_date,am,pm,combined,updated_at")
+    .order("service_date", { ascending: false }).limit(104);
+  if (error) throw new Error(`stream_announcements: ${error.message}`);
+  state.ann = data || []; state.annAt = Date.now();
+}
+function renderAnnouncements() {
+  if (!state.ann) return screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading the announcements…")));
+  const kids = [el("section", { class: "card" }, el("h2", {}, "Announcements"),
+    el("p", { class: "hint", style: "margin:0" }, "Sundays only. After the morning service the PC lists the greetings from other churches and the ",
+      "announcements read at the end; after the afternoon service it combines the two, each item once. Filled in about 20 to 30 minutes after each service ends."))];
+  if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No Sundays yet.")));
+  state.annView = state.annView || {};
+  for (const row of state.ann) {
+    const am = row.am, pm = row.pm, both = row.combined || {};
+    const view = state.annView[row.service_date] || "both";
+    const status = pm && am ? "Morning and afternoon" : pm ? "Afternoon only" : "Morning so far (afternoon not done yet)";
+    const pick = (p) => (p && p.found ? p : null);
+    const src = view === "AM" ? pick(am) : view === "PM" ? pick(pm) : null;
+    const greetings = view === "both" ? (both.greetings || []) : (src ? src.greetings || [] : []);
+    const anns = view === "both" ? (both.announcements || []) : (src ? src.announcements || [] : []);
+    const tag = (f) => view === "both" && f && f !== "both" ? el("span", { class: "anntag" }, f) : null;
+    const gLine = (g) => g.church
+      ? el("li", {}, el("strong", {}, g.church), g.place ? ` (${g.place})` : "", tag(g.from))
+      : el("li", {}, `“${g.heard || "?"}”`, el("span", { class: "hint" }, " not on the church list"), tag(g.from));
+    const switcher = el("div", { class: "annview" }, ...[["both", "Both"], ["AM", "AM"], ["PM", "PM"]].map(([k, label]) =>
+      el("button", { class: "small" + (view === k ? " on" : ""), disabled: (k === "AM" && !am) || (k === "PM" && !pm) ? "" : null,
+        onclick: () => { state.annView[row.service_date] = k; render(); } }, label)));
+    const missing = view !== "both" && !src ? el("p", { class: "hint" }, "No greetings or announcements were found in this recording.") : null;
+    const win = [am && am.found ? `AM ${am.window}` : null, pm && pm.found ? `PM ${pm.window}` : null].filter(Boolean).join(" · ");
+    kids.push(el("section", { class: "card ann" },
+      el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date))), el("span", { class: "hint" }, status), switcher),
+      missing,
+      el("h4", {}, `Greetings from other churches · ${greetings.length}`),
+      greetings.length ? el("ul", { class: "anngreet" }, ...greetings.map(gLine)) : el("p", { class: "hint" }, "None."),
+      el("h4", {}, `Announcements · ${anns.length}`),
+      anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => el("li", {}, a.text, tag(a.from)))) : el("p", { class: "hint" }, "None."),
+      win ? el("p", { class: "hint annfoot" }, `From the recording: ${win}. Read by Claude from the speech-to-text; check anything important.`) : null));
+  }
+  screen(...kids);
+}
+function demoAnn() {
+  return [{ service_date: "2026-11-15", updated_at: new Date().toISOString(),
+    am: { found: true, window: "11:14-11:16", greetings: [{ church: "Bloomington-Normal", place: "Normal, IL", heard: "Bloomington, Illinois" }, { church: "Gridley", place: "Gridley, IL", heard: "Gridley, Illinois" }, { church: "Sabetha", place: "Sabetha, KS", heard: "Sabatha, Kansas" }],
+      announcements: [{ text: "This month's collection is for ACCFS; the attachments with the announcements explain its work.", when: "" }, { text: "Christmas caroling Sunday, December 13, after church: start at 2:45 pm, potluck supper back at church around 5 pm.", when: "Sunday, December 13, 2:45 pm" }] },
+    pm: { found: true, window: "13:20-13:22", greetings: [], announcements: [{ text: "Harvest Call sign-up is this Wednesday; sign up promptly to get the week you want.", when: "Wednesday" }] },
+    combined: { complete: true, greetings: [{ church: "Bloomington-Normal", place: "Normal, IL", heard: "Bloomington, Illinois", from: "AM" }, { church: "Gridley", place: "Gridley, IL", heard: "Gridley, Illinois", from: "AM" }, { church: "Sabetha", place: "Sabetha, KS", heard: "Sabatha, Kansas", from: "AM" }],
+      announcements: [{ text: "This month's collection is for ACCFS; the attachments with the announcements explain its work.", when: "", from: "both" },
+        { text: "Christmas caroling Sunday, December 13, after church: start at 2:45 pm, potluck supper back at church around 5 pm.", when: "Sunday, December 13, 2:45 pm", from: "both" },
+        { text: "Bible class singing at Brother Taylor and Sister Tanya Graham's, Wednesday 7 pm.", when: "Wednesday, 7 pm", from: "both" },
+        { text: "Harvest Call sign-up is this Wednesday; sign up promptly to get the week you want.", when: "Wednesday", from: "PM" }] } },
+    { service_date: "2026-11-22", updated_at: new Date().toISOString(), pm: null,
+      am: { found: true, window: "11:15-11:18", greetings: [{ church: "Wolcott", place: "Wolcott, IN", heard: "Wolkert" }, { church: "", place: "", heard: "Principal of Brookings" }], announcements: [{ text: "Church Wednesday evening; singing begins at 7:15.", when: "Wednesday, 7:15 pm" }] },
+      combined: { complete: false, greetings: [{ church: "Wolcott", place: "Wolcott, IN", heard: "Wolkert", from: "AM" }, { church: "", place: "", heard: "Principal of Brookings", from: "AM" }], announcements: [{ text: "Church Wednesday evening; singing begins at 7:15.", when: "Wednesday, 7:15 pm", from: "AM" }] } },
+  ].sort((a, b) => (a.service_date < b.service_date ? 1 : -1));
 }
 
 // ------------------------------------------------------------------ History
@@ -1019,11 +1157,12 @@ function renderProcessMap() {
         step(4, "Audio streaming", "The PC starts Rocket Broadcaster at the same time; it sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
       phase("During", ["6 minutes in", ...list("check")],
         step(5, "Video and sound checked", "OBS streaming and recording, mic level, camera moving; AC Central lists Morris North live with audio and video; the radio stream has sound (if the room is still quiet, it listens every minute and judges the radio once the service starts, up to 20 minutes); the public player's picture moves. A problem sends an alert to the PC and a phone.", ["AC Central", "Radio Mast", "Phone alert"]),
-        step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds, with the Bible readings so far (a few minutes into each reading) and how many people listen to the audio (Radio Mast) and watch the video (Vimeo) right now, read once a minute.", ["Rocket Broadcaster", "Vimeo", "Radio Mast", "Now tab"])),
+        step(null, "Live in church", "The whole service long, every 10 seconds the PC listens to the last 20 seconds of the sound: who is speaking (by voice) or which hymn is sung (the announced number or the words). It shows at the top of the Now tab within about 30 seconds, with the Bible readings so far (a few minutes into each reading) and how many people listen to the audio (Radio Mast) and watch the video (Vimeo) right now, read once a minute. The card also plays the live video itself (the one AC Central shows, about half a minute behind), muted until you press the speaker button.", ["Rocket Broadcaster", "Vimeo", "Radio Mast", "Now tab"])),
       phase("Stop", ["whichever comes first:", "5 min after the ministers walk off", "the Stop button", "the set time:", ...list("cutoff")],
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. If the stream was already stopped, the set time does nothing more. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
         step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns. Before the service the hymn numbers are looked up in the Tabernacle / Hymns of Zion book first, from the hymn right before the service (5 min before a minister is first heard) in Zion's Harp first; a hymnal named in the announcement wins.", ["Church PC only"]),
+        step(null, "Announcements (Sundays)", "From the last minutes of the recording the PC sends only the words after the closing prayer to Claude, which lists the greetings from other churches (names and places from AC Central's church list) and the announcements. After the afternoon service the morning's and afternoon's are combined, each once, on the Announcements tab.", ["Claude API", "Announcements tab"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
         step(9, "Video uploaded to Vimeo", "Uploads the trimmed video, unlisted, to the Morris North folder.", ["Vimeo"]),
         step(10, "Sermon entry on AC Central", "Adds the sermon: date, service, minister, readings, the audio file and the video link.", ["AC Central"]),
@@ -1670,6 +1809,7 @@ async function refresh() {
     await load();
     const statsTab = DATA_TABS.includes(state.tab);
     if (statsTab && (!state.sermons || Date.now() - state.statsAt > 10 * 60e3)) { await loadStats(); if (state.crEdit === null) render(); }
+    if (state.tab === "announcements" && (!state.ann || Date.now() - state.annAt > 5 * 60e3)) await loadAnn();
     // do not redraw under an open confirmation, a form being filled in, the admin list or the stats being looked at
     if (!state.asking && state.tab !== "admin" && !statsTab && !(document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName))) render();
     else { setPc(); renderTabs(); }
@@ -1775,7 +1915,7 @@ async function demoLoad() {
       detail: isRun && i < 2 ? `AUXILIARY: ${i ? 0 : 10} dB, unmuted` : null })),
     walkoff: { day: isRun ? WEEKDAYS[today.getDay()] : "Sunday", from: "11:00", latest: "11:45", emptyMin: 5, status: isRun ? "watching" : null, occupiedSeen: isRun ? t(11, 0) : null, emptySince: isRun ? new Date(Date.now() - 95e3).toISOString() : null },
     health: { at: isRun ? new Date(Date.now() - 50e3).toISOString() : null, ok: isRun ? true : null, db: 0, muted: false, days: ["Sunday"], from: "09:30", to: "12:35" } };
-  state.live = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 8e3).toISOString(), audioAt: new Date(Date.now() - 14e3).toISOString(), state: "singing",
+  state.live = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, video: "https://vimeo.com/event/0/embed", at: new Date(Date.now() - 8e3).toISOString(), audioAt: new Date(Date.now() - 14e3).toISOString(), state: "singing",
     hymn: { number: "202", hymnal: "Zion's Harp", title: "Christ My All", how: "announced #202" },
     hymns: [{ time: "10:01", number: "291", title: "O For a Thousand Tongues" }, { time: "10:04", number: "405", title: "I Will Sing the Wondrous Story" },
       { time: "10:06", number: "485", title: "Sweet By and By" }, { time: "10:09", number: "148", title: "Hear Thou My Prayer" },
