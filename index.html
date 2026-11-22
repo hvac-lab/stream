@@ -192,6 +192,7 @@
   .ann ul { margin: 0; padding-left: 20px; } .ann li { margin: 3px 0; }
   .ann .anntag { margin-left: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
   .ann .annfoot { margin: 12px 0 0; }
+  .ann .praywrap textarea.praybox { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.4; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); resize: vertical; }
   .ann details.annmail { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
   .ann details.annmail > summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
   .ann .mailbar { display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
@@ -965,11 +966,46 @@ async function loadAnn() {
   // demo + &calfile=<same-site json>: a test copy of the church calendar (local testing only)
   if (demo && params.get("calfile") && !state.cal) { try { state.cal = await (await fetch(params.get("calfile"), { cache: "no-store" })).json(); } catch {} }
   if (demo) { state.ann = demoAnn(); state.annAt = Date.now(); return; }
-  const { data, error } = await state.sb.from("stream_announcements").select("service_date,am,pm,combined,updated_at")
+  const base = "service_date,am,pm,combined,updated_at";
+  let { data, error } = await state.sb.from("stream_announcements").select(base + ",prayers,prayers_carried,prayers_by,prayers_at")
     .order("service_date", { ascending: false }).limit(104);
+  // until supabase\stream_status_8.sql has been run the prayer columns are missing: load without them, box waits
+  state.noPrayers = !!(error && /prayers/i.test(error.message || ""));
+  if (state.noPrayers) ({ data, error } = await state.sb.from("stream_announcements").select(base).order("service_date", { ascending: false }).limit(104));
   if (error) throw new Error(`stream_announcements: ${error.message}`);
   state.ann = data || []; state.annAt = Date.now();
 }
+// Prayer requests per Sunday (Russ, 2026-11-22: "Add previous prayer requests from the week before. Remove the date if
+// it is past. Example. Week 1 - Pray for jim for his hip surgery on Nov 21. Week 2, pray for jim on his recent hip
+// surgery"). One request per line, saved for everyone (stream_set_prayers, supabase\stream_status_8.sql). After a
+// Sunday's service the church PC fills an empty list from the Sunday before, past dates reworded by Claude
+// (Update-Announcements.ps1 -> announcements.py --carry-prayers); the weekly email's Prayer Requests use this list.
+function prayerBox(row) {
+  if (state.noPrayers) return el("p", { class: "muted small" }, "Prayer requests: coming soon (the database part is not set up yet).");
+  const key = row.service_date;
+  state.prayDraft = state.prayDraft || {};
+  const saved = Array.isArray(row.prayers) ? row.prayers : [];
+  const ta = el("textarea", { class: "praybox", rows: String(Math.max(3, saved.length + 1)), placeholder: "One prayer request per line" });
+  ta.value = key in state.prayDraft ? state.prayDraft[key] : saved.join("\n");
+  const msg = el("span", { class: "hint" },
+    key in state.prayDraft ? "Not saved yet." :
+    row.prayers_carried ? "Carried over from the Sunday before (dates that have passed reworded). Check, change and Save." :
+    row.prayers_at ? `Saved ${fmtDate(new Date(row.prayers_at))} ${fmtTime(new Date(row.prayers_at))}${row.prayers_by ? " by " + row.prayers_by : ""}.` : "");
+  ta.addEventListener("input", () => { state.prayDraft[key] = ta.value; msg.textContent = "Not saved yet."; });
+  const save = el("button", { class: "small", onclick: async () => {
+    if (demo) { msg.textContent = "Demo: not saved."; return; }
+    save.disabled = true; msg.textContent = "Saving…";
+    const items = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const { error } = await state.sb.rpc("stream_set_prayers", { p_date: key, p_items: items });
+    save.disabled = false;
+    if (error) { msg.textContent = "Not saved: " + error.message; return; }
+    delete state.prayDraft[key];
+    Object.assign(row, { prayers: items, prayers_carried: false, prayers_at: new Date().toISOString(), prayers_by: (state.user && state.user.email) || "" });
+    render();
+  } }, "Save");
+  return el("div", { class: "praywrap" }, el("h4", {}, "Prayer requests"), ta, el("div", { class: "mailbar" }, save, msg));
+}
+
 // Greetings tab (Russ, 2026-11-22: "Remove the Greetings from other churches ... from the announcements, put them in a
 // new tab for now"): the same Sunday rows, one card per Sunday with the churches that sent greetings (AM and PM together).
 function renderGreetings() {
@@ -1025,6 +1061,7 @@ function renderAnnouncements() {
       })) : el("p", { class: "hint" }, "None."),
       // the greetings moved to their own tab (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab for now")
       // the "From the recording ..." line is gone (Russ, 2026-11-22: "Remove From the recording: AM 11:17-11:18 ...")
+      prayerBox(row),
       commEmail(row)));
   }
   screen(...kids);
@@ -1063,18 +1100,22 @@ const greetName = (g) => {
 // window shows at full size), bigger writing, drawn 3x so zooming on a phone stays sharp, long titles shortened in the
 // boxes (template shortNames), a word too long for its box made smaller. Kept per content.
 const calCache = new Map();
+// true = show this calendar line / title; the whole title in the template's hideTitles (any case) = leave it out
+const calKeep = (T) => { const hide = new Set(((T && T.hideTitles) || []).map(s => String(s).trim().toLowerCase())); return (line) => !hide.has(String(line).trim().toLowerCase()); };
 function calendarPicture(T, d) {
   // the church Google Calendar when the PC has read it (stream_meta 'calendar'), else the template's copy
   const cal = (state.cal && state.cal.months) || (T && T.calendar) || {};
   const collOf = (m) => ((state.cal && state.cal.collections) || {})[`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`]
     || ((T && T.collections) || {})[String(m.getMonth() + 1)];
   const short = (T && T.shortNames) || {};
+  // holidays that are not church events are left out (template hideTitles: "Thanksgiving", "Christmas"; Russ 2026-11-22)
+  const keep = calKeep(T);
   const shorten = (line) => { for (const [k, v] of Object.entries(short)) if (line.startsWith(k)) return v + line.slice(k.length); return line; };
   const months = [];
   for (let i = 0; i < 3; i++) {
     const m = new Date(d.getFullYear(), d.getMonth() + i, 1);
     const k = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
-    if (cal[k]) months.push([m, cal[k]]);
+    if (cal[k]) months.push([m, Object.fromEntries(Object.entries(cal[k]).map(([day, ls]) => [day, ls.filter(keep)]))]);
   }
   if (!months.length) return null;
   const key = JSON.stringify([months.map(([m, e]) => [m.getTime(), e, collOf(m)]), short]);
@@ -1186,8 +1227,9 @@ function commHtml(row) {
   if (state.cal && state.cal.events) {
     const after = ymd(new Date(d.getFullYear(), d.getMonth() + 3, 1)), until = ymd(new Date(d.getFullYear() + 1, d.getMonth(), d.getDate()));
     const groups = new Map();
+    const keepTitle = calKeep(T);
     for (const e of state.cal.events) {
-      if (e.date < after || e.date > until) continue;
+      if (e.date < after || e.date > until || !keepTitle(e.title)) continue;
       const g = groups.get(e.title) || { title: e.title, time: e.time, dates: [] };
       g.dates.push(e.date); if (g.time !== e.time) g.time = ""; groups.set(e.title, g);
     }
@@ -1206,7 +1248,7 @@ function commHtml(row) {
   for (let i = 1; i <= 14; i++) {
     const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i);
     // no lunch assignments here (Russ, 2026-11-22: "Do not include coming up lunch items"); they stay in the picture
-    const lines = ((calMonths[`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`] || {})[String(t.getDate())] || []).filter(l => !/^lunch/i.test(l));
+    const lines = ((calMonths[`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`] || {})[String(t.getDate())] || []).filter(l => !/^lunch/i.test(l)).filter(calKeep(T));
     // each item of the day on its own line under the date (Russ, 2026-11-22)
     if (lines.length) soon.push(`<b>${t.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b>` +
       (lines.length === 1 ? ` – ${esc(lines[0])}` : lines.map(l => `<br>${esc(l)}`).join("")));
@@ -1218,7 +1260,8 @@ function commHtml(row) {
     `<p style="margin:0"><b>${esc(T.opening || "Greetings in the name of Jesus!")}</b></p>` +
     H("Scripture Readings:") + (rd.length ? ul(rd) : ul([blank])) +
     H("Food for Thought:") + ul([blank]) +
-    H("Prayer Requests:") + ul([blank]) +
+    // the Sunday's prayer requests (the box on the card; carried from the week before by the PC)
+    H("Prayer Requests:") + ul((Array.isArray(row.prayers) && row.prayers.length) ? row.prayers.map(p => linkNames(esc(p), T.links)) : [blank]) +
     H("New Notes:") + ul(notes.length ? notes : [blank]) +
     comingUp + calImg +
     // greetings are on their own tab for now (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab")
@@ -1232,7 +1275,8 @@ function commHtml(row) {
       // this month's line bold (Russ, 2026-11-22: "Bold the month November: ACCFS")
       ul(Object.entries(T.collections).sort((a, b) => a[0] - b[0]).map(([m, w]) => {
         const line = `${new Date(2000, m - 1, 1).toLocaleDateString("en-US", { month: "long" })}: ${esc(w)}`;
-        return Number(m) === d.getMonth() + 1 ? `<b>${line}</b>` : line;
+        // and highlighted in yellow (Russ, 2026-11-22: "highlight in yellow November: ACCFS")
+        return Number(m) === d.getMonth() + 1 ? `<b style="background-color:#ffff00">${line}</b>` : line;
       })) : "") +
     `</div>`;
 }
@@ -1240,6 +1284,7 @@ const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building F
   lookaheads: ["<b>Communion</b> at Morris North = April 10, 2027"],
   churchInfo: ["Morris North Apostolic Christian Church address: <b>418 Birch Ave</b>, Morris, MN 56267"],
   ministers: [{ name: "(the ministers' phone numbers and emails come from the template on the PC)", lines: [] }],
+  hideTitles: ["Thanksgiving", "Christmas"],
   links: { "Harvest Call website": "https://www.harvestcall.org", "Harvest Call": "https://www.harvestcall.org", "ACCFS": "https://accounseling.org",
     "Sharing Love & Hope": "https://sharingloveandhope.org", "SLH": "https://sharingloveandhope.org" },
   shortNames: { "Wednesday Evening Service": "Morris North Church", "Church Services in Rochester - Morris North's Turn": "Rochester Church (our turn)", "Brookings Church — Morris North's Turn": "Brookings Church (our turn)",
@@ -1310,6 +1355,7 @@ function demoAnn() {
         { text: "Bible class singing at Brother Taylor and Sister Tanya Graham's, Wednesday 7 pm.", when: "Wednesday, 7 pm", from: "both" },
         { text: "Harvest Call sign-up is this Wednesday; sign up promptly to get the week you want.", when: "Wednesday", from: "PM" }] } },
     { service_date: "2026-11-22", updated_at: new Date().toISOString(), pm: null,
+      prayers: ["Pray for (a brother) on his recent hip surgery.", "Remember (a sister), who has a doctor appointment on Dec 3."], prayers_carried: true,
       am: { found: true, window: "11:15-11:18", greetings: [{ church: "Wolcott", place: "Wolcott, IN", heard: "Wolkert" }, { church: "", place: "", heard: "Principal of Brookings" }], announcements: [{ text: "Church Wednesday evening; singing begins at 7:15.", when: "Wednesday, 7:15 pm" }] },
       combined: { complete: false, greetings: [{ church: "Wolcott", place: "Wolcott, IN", heard: "Wolkert", from: "AM" }, { church: "", place: "", heard: "Principal of Brookings", from: "AM" }], announcements: [{ text: "Church Wednesday evening; singing begins at 7:15.", when: "Wednesday, 7:15 pm", from: "AM" }] } },
   ].sort((a, b) => (a.service_date < b.service_date ? 1 : -1));
@@ -2134,7 +2180,7 @@ async function refresh() {
     if ((state.tab === "announcements" || state.tab === "greetings") && (!state.ann || Date.now() - state.annAt > 5 * 60e3)) await loadAnn();
     // do not redraw under an open confirmation, a form being filled in, the admin list or the stats being looked at
     // ... nor while the weekly email is being edited (Announcements tab)
-    const typing = document.activeElement && (["INPUT", "SELECT"].includes(document.activeElement.tagName) || document.activeElement.isContentEditable);
+    const typing = document.activeElement && (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName) || document.activeElement.isContentEditable);
     if (!state.asking && state.tab !== "admin" && !statsTab && !typing && !(state.tab === "announcements" && state.commEdit && state.commEdit.size)) render();
     else { setPc(); renderTabs(); }
   } catch (e) { screen(el("section", { class: "card" }, "Could not load the status: " + (e.message || e))); }
