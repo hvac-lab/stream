@@ -1043,8 +1043,10 @@ function renderAnnouncements() {
 function linkNames(html, links) {
   const keys = Object.keys(links || {}).filter(k => !k.startsWith("_")).sort((a, b) => b.length - a.length);
   if (!keys.length) return html;
-  const re = new RegExp(keys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
-  const url = Object.fromEntries(keys.map(k => [k.toLowerCase(), links[k]]));
+  // the text is already escaped ("&" is "&amp;"), so the names are too; whole words only ("SLH", not inside a word)
+  const ek = (k) => k.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const re = new RegExp(`(?<![A-Za-z0-9])(?:${keys.map(k => ek(k).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?![A-Za-z0-9])`, "gi");
+  const url = Object.fromEntries(keys.map(k => [ek(k).toLowerCase(), links[k]]));
   return html.split(/(<a\b[^>]*>[\s\S]*?<\/a>|<[^>]+>)/i)
     .map(part => part.startsWith("<") ? part : part.replace(re, m => `<a href="${url[m.toLowerCase()]}">${m}</a>`)).join("");
 }
@@ -1222,7 +1224,8 @@ const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building F
   lookaheads: ["<b>Communion</b> at Morris North = April 10, 2027"],
   churchInfo: ["Morris North Apostolic Christian Church address: <b>418 Birch Ave</b>, Morris, MN 56267"],
   ministers: [{ name: "(the ministers' phone numbers and emails come from the template on the PC)", lines: [] }],
-  links: { "Harvest Call website": "https://www.harvestcall.org", "Harvest Call": "https://www.harvestcall.org" },
+  links: { "Harvest Call website": "https://www.harvestcall.org", "Harvest Call": "https://www.harvestcall.org", "ACCFS": "https://accounseling.org",
+    "Sharing Love & Hope": "https://sharingloveandhope.org", "SLH": "https://sharingloveandhope.org" },
   shortNames: { "Wednesday Evening Service": "Church", "Church Services in Rochester - Morris North's Turn": "Rochester Church (our turn)", "Brookings Church — Morris North's Turn": "Brookings Church (our turn)",
     "Food Packing Event - Sharing Love & Hope": "Food Packing SLH", "Christmas Program - PM Service": "Christmas Program" },
   calendar: { "2026-11": { 1: ["Lunch: (family)"], 4: ["Brookings", "Church 7:00", "Church 7:30"], 8: ["Lunch: (family)", "Bible Class SLH 4:30"],
