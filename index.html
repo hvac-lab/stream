@@ -473,8 +473,12 @@ function upcoming(count = 5) {
   for (let i = 0; i < 45 && out.length < count; i++) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     for (const s of (state.schedule?.services || [])) {
-      if (!s.enabled || !(s.days || []).includes(DAY[day.getDay()])) continue;
-      if (s.weeksOfMonth && !s.weeksOfMonth.includes(Math.floor((day.getDate() - 1) / 7) + 1)) continue;
+      if (!s.enabled) continue;
+      // one-off dates count whatever the week (schedule.json extraDates, e.g. Thanksgiving Eve 2026-11-25)
+      if (!(s.extraDates || []).includes(ymd(day))) {
+        if (!(s.days || []).includes(DAY[day.getDay()])) continue;
+        if (s.weeksOfMonth && !s.weeksOfMonth.includes(Math.floor((day.getDate() - 1) / 7) + 1)) continue;
+      }
       const end = atTime(day, s.cutoff);
       if (end < now) continue;
       out.push({ key: `${ymd(day)}_${s.id}`, svc: s, day, start: atTime(day, s.start), end });
@@ -1248,7 +1252,10 @@ function renderProcessMap() {
   const t = (hhmm) => fmtTime(atTime(new Date(), hhmm));
   const nth = { 1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th" };
   const short = { SunAM: "Sun AM", SunPM: "Sun PM", WedPM: "Wed" };
-  const svcName = (s) => (short[s.id] || s.name) + (s.weeksOfMonth ? ` (${s.weeksOfMonth.map(w => nth[w] || w).join(" & ")})` : "");
+  // one-off dates still to come are named too: "Wed (1st & 3rd, also Nov 25)"
+  const extra = (s) => (s.extraDates || []).filter(d => d >= ymd(new Date())).map(d => parseYmd(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }));
+  const svcName = (s) => (short[s.id] || s.name) + (s.weeksOfMonth || extra(s).length
+    ? ` (${[s.weeksOfMonth ? s.weeksOfMonth.map(w => nth[w] || w).join(" & ") : null, extra(s).length ? "also " + extra(s).join(", ") : null].filter(Boolean).join(", ")})` : "");
   const list = (key) => svcs.map(s => `${svcName(s)} ${t(s[key])}`);   // one line per service
 
   screen(
@@ -1985,7 +1992,7 @@ async function demoLoad() {
   state.schedule = { services: [
     { id: "SunAM", name: "Sunday AM", days: ["Sunday"], weeksOfMonth: null, start: "09:57", check: "10:03", cutoff: "11:25", enabled: true, walkoffFrom: "11:00" },
     { id: "SunPM", name: "Sunday PM", days: ["Sunday"], weeksOfMonth: null, start: "12:12", check: "12:18", cutoff: "13:40", enabled: true },
-    { id: "WedPM", name: "Wednesday Evening", days: ["Wednesday"], weeksOfMonth: [1, 3], start: "19:12", check: "19:18", cutoff: "20:45", enabled: true } ],
+    { id: "WedPM", name: "Wednesday Evening", days: ["Wednesday"], weeksOfMonth: [1, 3], extraDates: ["2026-11-25"], start: "19:12", check: "19:18", cutoff: "20:45", enabled: true } ],
     sheetUrl: "https://docs.google.com/spreadsheets/" };   // demo only; the real address comes from the church PC
   const allOk = (d) => [
     S("start", "Automatic start", "ok", "Started by the schedule at 9:57 AM; camera, Sanctuary mic and internet found.", d),
