@@ -989,10 +989,8 @@ function renderGreetings() {
 }
 function renderAnnouncements() {
   if (!state.ann) return screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading the announcements…")));
-  const kids = [el("section", { class: "card" }, el("h2", {}, "Announcements"),
-    el("p", { class: "hint", style: "margin:0" }, "Sundays only. After the morning service the PC lists the ",
-      "announcements read at the end; after the afternoon service it combines the two, each item once. Filled in about 20 to 30 minutes after each service ends. ",
-      "The greetings from other churches are on the Greetings tab."))];
+  // no explanation card at the top (Russ, 2026-11-22: "Remove Announcements Sundays only. ...")
+  const kids = [];
   if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No Sundays yet.")));
   state.annView = state.annView || {};
   for (const row of state.ann) {
@@ -1024,7 +1022,7 @@ function renderAnnouncements() {
         return el("li", {}, s, tag(a.from));
       })) : el("p", { class: "hint" }, "None."),
       // the greetings moved to their own tab (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab for now")
-      win ? el("p", { class: "hint annfoot" }, `From the recording: ${win}. Read by Claude from the speech-to-text; check anything important.`) : null,
+      // the "From the recording ..." line is gone (Russ, 2026-11-22: "Remove From the recording: AM 11:17-11:18 ...")
       commEmail(row)));
   }
   screen(...kids);
@@ -1079,7 +1077,8 @@ function calendarPicture(T, d) {
   if (!months.length) return null;
   const key = JSON.stringify([months.map(([m, e]) => [m.getTime(), e, collOf(m)]), short]);
   if (calCache.has(key)) return calCache.get(key);
-  const S = 3, W = 640, cw = W / 7, top = 20, head = 60, wk = 28, minRow = 86, lineH = 17;
+  // boxes 1 px narrower in all so the right-hand line falls inside the picture (Russ: "line missing on the right side")
+  const S = 3, W = 640, cw = (W - 1) / 7, top = 20, head = 60, wk = 28, minRow = 86, lineH = 17;
   const rowsOf = (m) => Math.ceil((m.getDay() + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7);
   const caps = (raw) => raw === raw.toUpperCase() && /[A-Z]/.test(raw), lunch = (raw) => /^lunch/i.test(raw);
   const fontAt = (raw, px) => `${caps(raw) ? "bold " : ""}${px}px Arial, sans-serif`;
@@ -1194,7 +1193,8 @@ function commHtml(row) {
   const soon = [];
   for (let i = 1; i <= 14; i++) {
     const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i);
-    const lines = ((calMonths[`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`] || {})[String(t.getDate())] || []);
+    // no lunch assignments here (Russ, 2026-11-22: "Do not include coming up lunch items"); they stay in the picture
+    const lines = ((calMonths[`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`] || {})[String(t.getDate())] || []).filter(l => !/^lunch/i.test(l));
     if (lines.length) soon.push(`<b>${t.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> – ${lines.map(esc).join("; ")}`);
   }
   const comingUp = soon.length ? H("Coming up:") + ul(soon) : "";
