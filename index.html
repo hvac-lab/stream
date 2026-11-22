@@ -240,6 +240,8 @@
   nav.subtabs button.on { color: var(--ink); font-weight: 650; border-bottom-color: var(--s1); }
   nav.subtabs.annsub { margin: 0 0 14px; }
   .gmap svg { width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: grab; }
+  .gmaphead { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 10px; } .gmaphead h3 { margin: 0; flex: 1 1 auto; }
+  .gmaphead .gmaptiles { margin: 0; grid-template-columns: repeat(2, minmax(120px, 170px)); } .gmaphead .tile { padding: 8px 12px; } .gmaphead .tile b { font-size: 24px; }
   .gmap .gmapbar { margin: 0 0 6px; } .gmap .gmapinfo { margin: 6px 0 0; color: var(--ink-2); }
   .toolbar { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
   .toolbar label { font-size: 13px; color: var(--ink-2); display:inline-flex; gap: 6px; align-items: center; }
@@ -1119,13 +1121,15 @@ function churchMapNode(churches, counts) {
     };
     // up to 60x (Russ, 2026-11-22: "I need to be able to zoom in more on the PC"); drag with the mouse to move around
     const zoom = d3.zoom().scaleExtent([1, 60]).translateExtent([[vb[0], vb[1]], [vb[0] + vb[2], vb[1] + vb[3]]])
-      .filter((e) => e.type === "wheel" ? true : e.type.startsWith("touch") ? (e.touches && e.touches.length > 1) : !e.button)
+      // one finger moves the map on a phone, two pinch (Russ, 2026-11-22: "I only want to use 1"); the page scrolls
+      // with a finger outside the map
+      .filter((e) => e.type === "wheel" || e.type.startsWith("touch") ? true : !e.button)
       .wheelDelta((e) => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * 2)   // each wheel step zooms twice as far
       .on("start", () => { svg.style.cursor = "grabbing"; })
       .on("end", () => { svg.style.cursor = "grab"; })
       .on("zoom", (e) => { ({ k, x: tx, y: ty } = e.transform); zoomG.setAttribute("transform", e.transform.toString()); layout(); });
     const sel = d3.select(svg).call(zoom);   // double-click zooms in too
-    svg.style.touchAction = "pan-y";   // one finger scrolls the page; two fingers pinch / drag the map
+    svg.style.touchAction = "none";   // all touches on the map go to the map (one finger drags, two pinch)
     const btn = (label, title, fn) => el("button", { class: "small", title, onclick: fn }, label);
     // move by a third of the window (Russ: "drag a window to scroll different directions")
     const move = (dx, dy) => () => { const w = vb[2] / 3 / k, h = vb[3] / 3 / k; sel.transition().duration(250).call(zoom.translateBy, dx * w, dy * h); };
@@ -1134,7 +1138,7 @@ function churchMapNode(churches, counts) {
       btn("−", "Zoom out", () => sel.transition().duration(250).call(zoom.scaleBy, 1 / 1.8)),
       btn("←", "Move left", move(1, 0)), btn("↑", "Move up", move(0, 1)), btn("↓", "Move down", move(0, -1)), btn("→", "Move right", move(-1, 0)),
       btn("Whole map", "Back to the whole map", () => sel.transition().duration(300).call(zoom.transform, d3.zoomIdentity)),
-      el("span", { class: "hint" }, "PC: mouse wheel or + to zoom, drag to move. Phone: two fingers to zoom and move."));
+      el("span", { class: "hint" }, "PC: mouse wheel or + to zoom, drag to move. Phone: pinch to zoom, one finger to move."));
     holder.replaceChildren(bar, svg, info, el("p", { class: "hint", style: "margin:2px 0 0" }, "Blue: greetings in the time frame (the number in the circle); gray: none; orange: Morris North."));
     requestAnimationFrame(layout);
   }).catch(() => { holder.replaceChildren(el("p", { class: "hint" }, "The map could not be loaded.")); });
@@ -1181,7 +1185,13 @@ function renderGreetings() {
     el("p", { class: "hint", style: "margin:8px 0 0" }, `${services} service day${services === 1 ? "" : "s"} in the time frame; a church greeting at the morning and the afternoon service counts 2.`,
       unmatched ? ` ${unmatched} greeting${unmatched === 1 ? "" : "s"} not matched to a church (see the days below).` : "")));
   // the map: every church, its count in the frame (0 is fine)
-  const mapCard = el("section", { class: "card" }, el("h3", {}, "Our churches"));
+  // two tiles right of the title (Russ, 2026-11-22): the church greetings in the time frame, and the share of our
+  // churches that sent at least one
+  const greeted = rows.filter(([n]) => !churchList.length || churchList.some(c => c.name === n)).length;
+  const pct = churchList.length ? Math.round(100 * greeted / churchList.length) : 0;
+  const mapCard = el("section", { class: "card" }, el("div", { class: "gmaphead" }, el("h3", {}, "Our churches"),
+    el("div", { class: "tiles gmaptiles" }, tile(total, "church greetings"),
+      tile(`${pct}%`, churchList.length ? `of our churches (${greeted} of ${churchList.length})` : "of our churches"))));
   if (!churchList.length) mapCard.append(el("p", { class: "hint" }, "The church locations are not on the page yet."));
   else {
     mapCard.append(churchMapNode(churchList, counts));
