@@ -697,7 +697,11 @@ const bookName = (h) => {
 };
 function liveDetails(L, V, ended) {
   const out = [];
-  const hy = (L.hymns || []).filter(h => h && h.number);
+  // a hymn is sung only once in a service (Russ, 2026-11-22: "We would only sing a hymn one time"): the live listener
+  // listed #99 at 10:01, 10:02 and 10:03 (pauses in the singing); only the first is kept
+  const hy = [];
+  for (const h of (L.hymns || []).filter(h => h && h.number).sort((a, b) => String(a.time || "").localeCompare(String(b.time || ""))))
+    if (!hy.some(x => (String(x.number) === String(h.number) && (x.hymnal || "") === (h.hymnal || "")) || (x.title && x.title === h.title))) hy.push(h);
   // Russ, 2026-11-18: hymns in two columns, each minister on a line of his own with from - to, the counts in a box
   // (Video / Audio / Total down the side, Current / Max across). 2026-11-19: ministers first with the counts to their
   // right at the top, the hymns below; only the minister names bold.
@@ -754,7 +758,7 @@ function liveDetails(L, V, ended) {
   if (left.length || counts) out.push(el("div", { class: "livetop" }, el("div", { class: "liveleft" }, ...left), counts || el("span", {})));
   if (hy.length) out.push(ended ? null : el("div", { class: "sub lbl" }, "Hymns so far:"),
     // under step 7 one column, oldest first, "Hymns of Zion - #291 - O For a Thousand Tongues" (Russ, 2026-11-19)
-    ended ? el("div", { class: "hymnlist" }, ...[...hy].sort((a, b) => String(a.time || "").localeCompare(String(b.time || ""))).map(h => el("div", {}, [bookName(h), `#${h.number}`, h.title].filter(Boolean).join(" - "))))
+    ended ? el("div", { class: "hymnlist" }, ...hy.map(h => el("div", {}, [bookName(h), `#${h.number}`, h.title].filter(Boolean).join(" - "))))
       : el("div", { class: "hymncols", style: `--rows:${Math.ceil(hy.length / 2)}` }, ...hy.map(h => el("div", {}, `${h.time} #${h.number} ${h.title || ""}`))));
   return out;
 }
