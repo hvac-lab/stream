@@ -1181,9 +1181,12 @@ function calendarPicture(T, d) {
         g.strokeRect(x + 0.5, y + 0.5, cw, hs[r]);
         if (day < 1 || day > n) continue;
         g.fillStyle = "#111"; g.textAlign = "left"; g.font = "bold 18px Arial, sans-serif"; g.fillText(String(day), x + 5, y + 20);
-        let ly = y + 37;
+        // Mon-Fri: the events sit at the bottom of the box; Sat and Sun from the top (Russ, 2026-11-22: "All events in
+        // the calendar should be justified to the bottom for days of the week, leave Sat & Sun")
+        const lines = cellLines(ent, day);
+        let ly = (i >= 1 && i <= 5 && lines.length) ? Math.max(y + 37, y + hs[r] - 6 - (cellH(lines) - lineH)) : y + 37;
         let firstItem = true;
-        for (const [raw, l, px, starts] of cellLines(ent, day)) {
+        for (const [raw, l, px, starts] of lines) {
           if (starts && !firstItem) ly += itemGap;
           if (starts) firstItem = false;
           g.font = fontAt(raw, px); g.fillStyle = lunch(raw) ? "#444" : "#111";
