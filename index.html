@@ -1073,8 +1073,6 @@ function renderAnnouncements() {
       })) : el("p", { class: "hint" }, "None."),
       // the greetings moved to their own tab (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab for now")
       // the "From the recording ..." line is gone (Russ, 2026-11-22: "Remove From the recording: AM 11:17-11:18 ...")
-      sectionBox(row, "food"),
-      sectionBox(row, "prayers"),
       commEmail(row)));
   }
   screen(...kids);
@@ -1352,6 +1350,9 @@ function commEmail(row) {
   } }, "Open Gmail (mnorthacc)");
   const det = el("details", { class: "annmail", open: state.commOpen.has(key) ? "" : null },
     el("summary", {}, "Email: ", el("b", {}, subject)),
+    // the two parts typed by hand sit inside the expanding area, above the email (Russ, 2026-11-22)
+    sectionBox(row, "food"),
+    sectionBox(row, "prayers"),
     el("div", { class: "mailbar" }, copy, edit, reset, gmail, copyCal, msg),
     prev);
   det.addEventListener("toggle", () => { if (det.open) state.commOpen.add(key); else state.commOpen.delete(key); });
