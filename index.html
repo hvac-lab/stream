@@ -239,7 +239,8 @@
   nav.subtabs button { border: 0; border-radius: 0; background: none; padding: 8px 14px; color: var(--ink-2); border-bottom: 3px solid transparent; margin-bottom: -1px; }
   nav.subtabs button.on { color: var(--ink); font-weight: 650; border-bottom-color: var(--s1); }
   nav.subtabs.annsub { margin: 0 0 14px; }
-  .gmap svg { width: 100%; height: auto; display: block; }
+  .gmap svg { width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: grab; }
+  .gmap .gmapbar { margin: 0 0 6px; } .gmap .gmapinfo { margin: 6px 0 0; color: var(--ink-2); }
   .toolbar { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
   .toolbar label { font-size: 13px; color: var(--ink-2); display:inline-flex; gap: 6px; align-items: center; }
   input[type=date] { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
@@ -979,6 +980,8 @@ function renderNow() {
 async function loadAnn() {
   // demo + &calfile=<same-site json>: a test copy of the church calendar (local testing only)
   if (demo && params.get("calfile") && !state.cal) { try { state.cal = await (await fetch(params.get("calfile"), { cache: "no-store" })).json(); } catch {} }
+  // demo + &churchfile=<same-site json>: a test copy of stream_meta 'churches' for the Greetings map (local testing only)
+  if (demo && params.get("churchfile") && !state.churchMap) { try { state.churchMap = await (await fetch(params.get("churchfile"), { cache: "no-store" })).json(); } catch {} }
   if (demo) { state.ann = demoAnn(); state.annAt = Date.now(); return; }
   const base = "service_date,am,pm,combined,updated_at";
   let { data, error } = await state.sb.from("stream_announcements").select(base + ",prayers,prayers_carried,prayers_by,prayers_at,food,food_by,food_at")
@@ -1050,25 +1053,78 @@ function churchMapNode(churches, counts) {
   state.mapCache = { key, node: holder };
   loadMapLibs().then(() => {
     const NS = "http://www.w3.org/2000/svg", mk = (t, a = {}) => { const n = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) n.setAttribute(k, v); return n; };
-    const svg = mk("svg", { viewBox: "0 0 975 610", role: "img", "aria-label": "Map of the churches and their greetings" });
     const us = state.usStates, path = d3.geoPath();
-    const land = mk("path", { d: path(topojson.feature(us, us.objects.states)) }); land.style.cssText = "fill:var(--band);stroke:none";
-    const borders = mk("path", { d: path(topojson.mesh(us, us.objects.states, (a, b) => a !== b)) }); borders.style.cssText = "fill:none;stroke:var(--muted);stroke-width:0.7;opacity:.6";
-    const outline = mk("path", { d: path(topojson.mesh(us, us.objects.nation || us.objects.states, (a, b) => a === b)) }); outline.style.cssText = "fill:none;stroke:var(--muted);stroke-width:1";
-    svg.append(land, borders, outline);
+    // the lower 48 only (Russ, 2026-11-22: "Remove Alaska and Hawaii"): FIPS 02 and 15 left out, the view fitted to the rest
+    const keep = (g) => !["02", "15"].includes(String(g.id));
+    const lower48 = { type: "FeatureCollection", features: topojson.feature(us, us.objects.states).features.filter(keep) };
+    const [[x0, y0], [x1, y1]] = path.bounds(lower48), pad = 12;
+    const vb = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
+    const svg = mk("svg", { viewBox: vb.join(" "), role: "img", "aria-label": "Map of the churches and their greetings" });
+    const zoomG = mk("g");
+    const land = mk("path", { d: path(lower48) }); land.style.cssText = "fill:var(--band);stroke:none";
+    const borders = mk("path", { d: path(topojson.mesh(us, us.objects.states, (a, b) => a !== b && keep(a) && keep(b))), "vector-effect": "non-scaling-stroke" });
+    borders.style.cssText = "fill:none;stroke:var(--muted);stroke-width:0.7;opacity:.6";
+    const outline = mk("path", { d: path(topojson.mesh(us, us.objects.states, (a, b) => a === b && keep(a))), "vector-effect": "non-scaling-stroke" });
+    outline.style.cssText = "fill:none;stroke:var(--muted);stroke-width:1";
+    zoomG.append(land, borders, outline);
     const proj = d3.geoAlbersUsa().scale(1300).translate([487.5, 305]);
     const pts = churches.filter(c => c.lat != null).map(c => ({ c, n: counts.get(c.name) || 0, p: proj([c.lon, c.lat]) })).filter(x => x.p);
     pts.sort((a, b) => a.n - b.n);   // the bigger circles on top
-    for (const { c, n, p } of pts) {
-      const home = c.name === "Morris North", r = n ? 9 + 4 * Math.sqrt(n) : home ? 7 : 4.5;
-      const g = mk("g"); const t = mk("title"); t.textContent = `${c.name} (${c.town}, ${c.state}): ${n} greeting${n === 1 ? "" : "s"}`; g.append(t);
-      const dot = mk("circle", { cx: p[0].toFixed(1), cy: p[1].toFixed(1), r: r.toFixed(1) });
+    const info = el("p", { class: "hint gmapinfo" }, "Tap or click a circle for the church.");
+    const marks = pts.map(({ c, n, p }) => {
+      const home = c.name === "Morris North", r0 = n ? 9 + 4 * Math.sqrt(n) : home ? 7 : 4.5;
+      const g = mk("g", { class: "gpt" }); const t = mk("title"); t.textContent = `${c.name}: ${n} greeting${n === 1 ? "" : "s"}`; g.append(t);
+      const dot = mk("circle", { cx: p[0].toFixed(1), cy: p[1].toFixed(1), r: r0.toFixed(1) });
       dot.style.cssText = home ? "fill:var(--s2);stroke:var(--surface);stroke-width:1.5" : n ? "fill:var(--s1);fill-opacity:.85;stroke:var(--surface);stroke-width:1.5" : "fill:var(--muted);fill-opacity:.55";
+      dot.setAttribute("vector-effect", "non-scaling-stroke");
       g.append(dot);
-      if (n) { const tx = mk("text", { x: p[0].toFixed(1), y: (p[1] + 4).toFixed(1), "text-anchor": "middle" }); tx.style.cssText = "fill:#fff;font:600 11px system-ui,sans-serif;pointer-events:none"; tx.textContent = n; g.append(tx); }
-      svg.append(g);
-    }
-    holder.replaceChildren(svg, el("p", { class: "hint", style: "margin:6px 0 0" }, "Blue: greetings in the time frame (the number in the circle); gray: none; orange: Morris North. Hover or tap a circle for the church."));
+      let num = null;
+      if (n) { num = mk("text", { x: p[0].toFixed(1), y: (p[1] + 4).toFixed(1), "text-anchor": "middle" }); num.style.cssText = "fill:#fff;font-weight:600;font-family:system-ui,sans-serif;pointer-events:none"; num.textContent = n; g.append(num); }
+      // the church name (no state: Russ "I already know the state, so just the name"), shown when zoomed in with room
+      const label = mk("text", { x: p[0].toFixed(1), y: p[1].toFixed(1), "dominant-baseline": "middle" }); label.style.cssText = "fill:var(--ink);font-family:system-ui,sans-serif;paint-order:stroke;stroke:var(--surface);stroke-linejoin:round;pointer-events:none;display:none";
+      label.textContent = c.name; g.append(label);
+      g.style.cursor = "pointer";
+      g.addEventListener("click", () => { info.textContent = `${c.name}: ${n} greeting${n === 1 ? "" : "s"} in the time frame`; });
+      zoomG.append(g);
+      return { c, n, p, r0, dot, num, label };
+    });
+    svg.append(zoomG);
+    // zoom: mouse wheel / buttons on a PC; two-finger pinch and drag on a phone (one finger still scrolls the page)
+    let k = 1, tx = 0, ty = 0;
+    const layout = () => {
+      const s = svg.getBoundingClientRect().width / vb[2] || 1;   // screen pixels per map unit at zoom 1
+      const showNames = k >= 2.2, placed = [];
+      for (const m of [...marks].sort((a, b) => b.n - a.n || a.c.name.localeCompare(b.c.name))) {
+        const r = m.r0 / Math.sqrt(k);                 // circles grow a little slower than the map
+        m.dot.setAttribute("r", r.toFixed(2));
+        if (m.num) { m.num.style.fontSize = `${(11 / Math.sqrt(k)).toFixed(2)}px`; m.num.setAttribute("y", (m.p[1] + 4 / Math.sqrt(k)).toFixed(2)); }
+        let show = false;
+        if (showNames) {
+          const fs = 13 / (k * s), sx = (m.p[0] * k + tx) * s, sy = (m.p[1] * k + ty) * s, rp = r * k * s;   // 13 screen px
+          const box = [sx + rp + 3, sy - 9, sx + rp + 5 + m.c.name.length * 7.2, sy + 9];
+          show = !placed.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);
+          if (show) {
+            placed.push(box);
+            m.label.setAttribute("x", (m.p[0] + r + 3 / (k * s)).toFixed(2));
+            m.label.style.fontSize = `${fs.toFixed(3)}px`; m.label.style.strokeWidth = `${(3 / (k * s)).toFixed(3)}px`;
+          }
+        }
+        m.label.style.display = show ? "" : "none";
+      }
+    };
+    const zoom = d3.zoom().scaleExtent([1, 14]).translateExtent([[vb[0], vb[1]], [vb[0] + vb[2], vb[1] + vb[3]]])
+      .filter((e) => e.type === "wheel" ? true : e.type.startsWith("touch") ? (e.touches && e.touches.length > 1) : !e.button)
+      .on("zoom", (e) => { ({ k, x: tx, y: ty } = e.transform); zoomG.setAttribute("transform", e.transform.toString()); layout(); });
+    const sel = d3.select(svg).call(zoom).on("dblclick.zoom", null);
+    svg.style.touchAction = "pan-y";   // one finger scrolls the page; two fingers pinch / drag the map
+    const btn = (label, title, fn) => el("button", { class: "small", title, onclick: fn }, label);
+    const bar = el("div", { class: "mailbar gmapbar" },
+      btn("+", "Zoom in", () => sel.transition().duration(250).call(zoom.scaleBy, 1.8)),
+      btn("−", "Zoom out", () => sel.transition().duration(250).call(zoom.scaleBy, 1 / 1.8)),
+      btn("Whole map", "Back to the whole map", () => sel.transition().duration(300).call(zoom.transform, d3.zoomIdentity)),
+      el("span", { class: "hint" }, "Zoom in for the names: mouse wheel or + on a PC, two fingers on a phone."));
+    holder.replaceChildren(bar, svg, info, el("p", { class: "hint", style: "margin:2px 0 0" }, "Blue: greetings in the time frame (the number in the circle); gray: none; orange: Morris North."));
+    requestAnimationFrame(layout);
   }).catch(() => { holder.replaceChildren(el("p", { class: "hint" }, "The map could not be loaded.")); });
   return holder;
 }
