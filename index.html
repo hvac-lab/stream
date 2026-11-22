@@ -337,7 +337,7 @@ const demo = params.get("demo") === "1";
 const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
 // Ministers, Hymns and Bible were the three pages of one Stats tab until 2026-11-10 (Russ)
-const TABS = [["now", "Now"], ["history", "History"], ["announcements", "Announcements"],["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
+const TABS = [["now", "Now"], ["history", "History"], ["announcements", "Announcements"], ["greetings", "Greetings"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
 const STATS_TABS = { ministers: "minister", hymns: "hymn", bible: "readings" };
 const DATA_TABS = [...Object.keys(STATS_TABS), "copyright", "viewers"];   // need loadStats()
 const oldTab = (t) => t === "stats" ? ({ hymn: "hymns", readings: "bible" }[store.get("statsView", "")] || "ministers") : t;
@@ -696,7 +696,7 @@ function renderTabs() {
     if (adminOnly.includes(k) && !state.admin) continue;
     nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { const stuck = tabsStuck(); state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); tabScroll(stuck);
         if (DATA_TABS.includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } }
-        if (k === "announcements" && !state.ann) { try { await loadAnn(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
+        if ((k === "announcements" || k === "greetings") && !state.ann) { try { await loadAnn(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
       label, k === "tests" && testLive ? el("span", { class: "live", title: "a test is running" }) : null));
   }
 }
@@ -708,6 +708,7 @@ function render() {
   if (state.tab === "copyright") return renderCopyright();
   if (state.tab === "viewers") return renderViewers();
   if (state.tab === "announcements") return renderAnnouncements();
+  if (state.tab === "greetings") return renderGreetings();
   if (state.tab === "map") return renderProcessMap();
   if (state.tab === "tests") return renderTests();
   if (state.tab === "admin") return renderAdmin();
@@ -969,11 +970,29 @@ async function loadAnn() {
   if (error) throw new Error(`stream_announcements: ${error.message}`);
   state.ann = data || []; state.annAt = Date.now();
 }
+// Greetings tab (Russ, 2026-11-22: "Remove the Greetings from other churches ... from the announcements, put them in a
+// new tab for now"): the same Sunday rows, one card per Sunday with the churches that sent greetings (AM and PM together).
+function renderGreetings() {
+  if (!state.ann) return screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading the greetings…")));
+  const kids = [el("section", { class: "card" }, el("h2", {}, "Greetings from other churches"),
+    el("p", { class: "hint", style: "margin:0" }, "Sundays only: the churches visitors brought greetings from at the end of the services, ",
+      "with names and places from AC Central's church list. From the recording, read by Claude; check anything important."))];
+  if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No Sundays yet.")));
+  for (const row of state.ann) {
+    const gs = (row.combined || {}).greetings || [];
+    kids.push(el("section", { class: "card ann" },
+      el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date))), el("span", { class: "hint" }, `${gs.length} church${gs.length === 1 ? "" : "es"}`)),
+      gs.length ? el("ul", { class: "anngreet" }, ...gs.map(g => g.church ? el("li", {}, greetName(g))
+        : el("li", {}, `“${g.heard || "?"}”`, el("span", { class: "hint" }, " not on the church list")))) : el("p", { class: "hint" }, "None.")));
+  }
+  screen(...kids);
+}
 function renderAnnouncements() {
   if (!state.ann) return screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading the announcements…")));
   const kids = [el("section", { class: "card" }, el("h2", {}, "Announcements"),
-    el("p", { class: "hint", style: "margin:0" }, "Sundays only. After the morning service the PC lists the greetings from other churches and the ",
-      "announcements read at the end; after the afternoon service it combines the two, each item once. Filled in about 20 to 30 minutes after each service ends."))];
+    el("p", { class: "hint", style: "margin:0" }, "Sundays only. After the morning service the PC lists the ",
+      "announcements read at the end; after the afternoon service it combines the two, each item once. Filled in about 20 to 30 minutes after each service ends. ",
+      "The greetings from other churches are on the Greetings tab."))];
   if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No Sundays yet.")));
   state.annView = state.annView || {};
   for (const row of state.ann) {
@@ -1000,8 +1019,7 @@ function renderAnnouncements() {
       missing,
       el("h4", {}, `Announcements · ${anns.length}`),
       anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => el("li", {}, a.text, tag(a.from)))) : el("p", { class: "hint" }, "None."),
-      el("h4", {}, `Greetings from other churches · ${greetings.length}`),
-      greetings.length ? el("ul", { class: "anngreet" }, ...greetings.map(gLine)) : el("p", { class: "hint" }, "None."),
+      // the greetings moved to their own tab (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab for now")
       win ? el("p", { class: "hint annfoot" }, `From the recording: ${win}. Read by Claude from the speech-to-text; check anything important.`) : null,
       commEmail(row)));
   }
@@ -1021,16 +1039,20 @@ const greetName = (g) => {
   const st = String(g.place || "").split(",").pop().trim();
   return st ? `${g.church}, ${st}` : g.church;
 };
-// The month calendars as ONE picture under New Notes (Russ, 2026-11-22, idea #4: "a calendar picture in the email ...
-// Add it to the email under announcements"), drawn like the PDF's: "Lord willing...", the month's collection, the month,
-// Sun-Sat boxes with the lines of each day. From the template's calendar ('YYYY-MM' -> day -> lines): the Sunday's
-// month and the next two that are there. Drawn at twice the size so it stays sharp; kept per content.
+// The month calendars as pictures under New Notes (Russ, 2026-11-22, idea #4: "a calendar picture in the email ... Add
+// it to the email under announcements"), drawn like the PDF's: "Lord willing...", the month's collection, the month,
+// Sun-Sat boxes with the lines of each day; the Sunday's month and the next two. Then "The calendar is too small in the
+// email on PC ... It needs work so it looks good on PC and mobile": one picture per month, 640 px wide (what an email
+// window shows at full size), bigger writing, drawn 3x so zooming on a phone stays sharp, long titles shortened in the
+// boxes (template shortNames), a word too long for its box made smaller. Kept per content.
 const calCache = new Map();
 function calendarPicture(T, d) {
   // the church Google Calendar when the PC has read it (stream_meta 'calendar'), else the template's copy
   const cal = (state.cal && state.cal.months) || (T && T.calendar) || {};
   const collOf = (m) => ((state.cal && state.cal.collections) || {})[`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`]
     || ((T && T.collections) || {})[String(m.getMonth() + 1)];
+  const short = (T && T.shortNames) || {};
+  const shorten = (line) => { for (const [k, v] of Object.entries(short)) if (line.startsWith(k)) return v + line.slice(k.length); return line; };
   const months = [];
   for (let i = 0; i < 3; i++) {
     const m = new Date(d.getFullYear(), d.getMonth() + i, 1);
@@ -1038,66 +1060,74 @@ function calendarPicture(T, d) {
     if (cal[k]) months.push([m, cal[k]]);
   }
   if (!months.length) return null;
-  const key = JSON.stringify(months.map(([m, e]) => [m.getTime(), e, collOf(m)]));
+  const key = JSON.stringify([months.map(([m, e]) => [m.getTime(), e, collOf(m)]), short]);
   if (calCache.has(key)) return calCache.get(key);
-  const S = 2, W = 900, cw = W / 7, top = 18, head = 56, wk = 26, minRow = 100, lineH = 15, gap = 22;
+  const S = 3, W = 640, cw = W / 7, top = 20, head = 60, wk = 28, minRow = 86, lineH = 17;
   const rowsOf = (m) => Math.ceil((m.getDay() + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7);
-  const fontOf = (raw) => raw === raw.toUpperCase() && /[A-Z]/.test(raw) ? "bold 13px Arial, sans-serif" : /^lunch/i.test(raw) ? "12.5px Arial, sans-serif" : "13.5px Arial, sans-serif";
+  const caps = (raw) => raw === raw.toUpperCase() && /[A-Z]/.test(raw), lunch = (raw) => /^lunch/i.test(raw);
+  const fontAt = (raw, px) => `${caps(raw) ? "bold " : ""}${px}px Arial, sans-serif`;
+  const baseOf = (raw) => caps(raw) ? 14 : lunch(raw) ? 14 : 15;
   const mg = document.createElement("canvas").getContext("2d");   // for measuring before the size is known
-  const wrap = (ctx, text, maxW) => {      // words to lines that fit the box
-    const out = []; let line = "";
-    for (const w of String(text).split(/\s+/)) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
-    if (line) out.push(line); return out;
-  };
-  const cellLines = (ent, day) => (ent[String(day)] || []).flatMap(raw => { mg.font = fontOf(raw); return wrap(mg, raw, cw - 10).map(l => [raw, l]); });
-  // each week's row is as tall as its busiest day needs (at least minRow)
+  const maxW = cw - 8;
+  // [raw, text, px] per line: words to lines that fit the box; a single word too long gets a smaller size
+  const cellLines = (ent, day) => (ent[String(day)] || []).flatMap(full => {
+    const raw = shorten(full), out = []; let line = "";
+    mg.font = fontAt(raw, baseOf(raw));
+    for (const w of raw.split(/\s+/)) { const t = line ? line + " " + w : w; if (mg.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
+    if (line) out.push(line);
+    return out.map(l => { let px = baseOf(raw); mg.font = fontAt(raw, px); while (mg.measureText(l).width > maxW && px > 9) { px -= 0.5; mg.font = fontAt(raw, px); } return [raw, l, px]; });
+  });
   const rowHs = (m, ent) => Array.from({ length: rowsOf(m) }, (_, r) => {
     let most = 0; for (let i = 0; i < 7; i++) most = Math.max(most, cellLines(ent, r * 7 + i - m.getDay() + 1).length);
-    return Math.max(minRow, 38 + most * lineH);
+    return Math.max(minRow, 34 + most * lineH);
   });
-  const H = months.reduce((h, [m, ent]) => h + top + head + wk + rowHs(m, ent).reduce((a, b) => a + b, 0) + gap, 0);
-  const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
-  const g = c.getContext("2d"); g.scale(S, S);
-  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
-  g.strokeStyle = "#111"; g.lineWidth = 1.2; g.textBaseline = "alphabetic";
-  let y = 0;
-  for (const [m, ent] of months) {
-    g.fillStyle = "#333"; g.font = "italic 11px Georgia, serif"; g.textAlign = "left"; g.fillText("Lord willing…", 6, y + 13);
+  const draw = (m, ent) => {
+    const hs = rowHs(m, ent), H = top + head + wk + hs.reduce((a, b) => a + b, 0) + 2;
+    const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+    const g = c.getContext("2d"); g.scale(S, S);
+    g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+    g.strokeStyle = "#111"; g.lineWidth = 1; g.textBaseline = "alphabetic";
+    let y = 0;
+    g.fillStyle = "#333"; g.font = "italic 13px Georgia, serif"; g.textAlign = "left"; g.fillText("Lord willing…", 4, y + 14);
     y += top;
     g.strokeRect(0.5, y + 0.5, W - 1, head);
     g.fillStyle = "#111"; g.textAlign = "center"; g.font = "bold 26px Arial, sans-serif";
     g.fillText(m.toLocaleDateString("en-US", { month: "long", year: "numeric" }), W / 2, y + 30);
     const coll = collOf(m);
-    if (coll) {
-      g.textAlign = "left"; g.font = "bold 12px Arial, sans-serif"; g.fillText("Monthly Collection = ", 8, y + 48);
-      const w0 = g.measureText("Monthly Collection = ").width; g.font = "12px Arial, sans-serif"; g.fillText(coll, 8 + w0, y + 48);
-    }
+    if (coll) { g.font = "14px Arial, sans-serif"; g.fillText(`Monthly Collection = ${coll}`, W / 2, y + 51); }
     y += head;
     ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((n, i) => {
-      g.strokeRect(i * cw + 0.5, y + 0.5, cw, wk); g.fillStyle = "#111"; g.font = "bold 16px Arial, sans-serif"; g.textAlign = "center"; g.fillText(n, i * cw + cw / 2, y + 19);
+      g.strokeRect(i * cw + 0.5, y + 0.5, cw, wk); g.fillStyle = "#111"; g.font = "bold 15px Arial, sans-serif"; g.textAlign = "center"; g.fillText(n, i * cw + cw / 2, y + 19);
     });
     y += wk;
     const first = m.getDay(), n = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
-    const hs = rowHs(m, ent);
     for (let r = 0; r < hs.length; r++) {
       for (let i = 0; i < 7; i++) {
         const x = i * cw, day = r * 7 + i - first + 1;
         g.strokeRect(x + 0.5, y + 0.5, cw, hs[r]);
         if (day < 1 || day > n) continue;
-        g.fillStyle = "#111"; g.textAlign = "left"; g.font = "bold 18px Arial, sans-serif"; g.fillText(String(day), x + 6, y + 20);
-        let ly = y + 38;
-        for (const [raw, l] of cellLines(ent, day)) {
-          g.font = fontOf(raw); g.fillStyle = /^lunch/i.test(raw) ? "#444" : "#111";
-          g.fillText(l, x + 5, ly); ly += lineH;
+        g.fillStyle = "#111"; g.textAlign = "left"; g.font = "bold 18px Arial, sans-serif"; g.fillText(String(day), x + 5, y + 20);
+        let ly = y + 37;
+        for (const [raw, l, px] of cellLines(ent, day)) {
+          g.font = fontAt(raw, px); g.fillStyle = lunch(raw) ? "#444" : "#111";
+          g.fillText(l, x + 4, ly); ly += lineH;
         }
       }
       y += hs[r];
     }
-    y += gap;
-  }
-  const pic = { url: c.toDataURL("image/png"), width: W, height: H };
-  calCache.set(key, pic);
-  return pic;
+    return c;
+  };
+  const canvases = months.map(([m, ent]) => draw(m, ent));
+  const pics = canvases.map((c, i) => ({ url: c.toDataURL("image/png"), width: W, height: c.height / S,
+    label: months[i][0].toLocaleDateString("en-US", { month: "long", year: "numeric" }) }));
+  // all months in one tall picture for "Copy calendar picture" (a picture pasted into Gmail always stays)
+  const gap = 16, CH = canvases.reduce((h, c) => h + c.height, 0) + gap * S * (canvases.length - 1);
+  const all = document.createElement("canvas"); all.width = W * S; all.height = CH;
+  const ag = all.getContext("2d"); ag.fillStyle = "#fff"; ag.fillRect(0, 0, all.width, all.height);
+  let yy = 0; for (const c of canvases) { ag.drawImage(c, 0, yy); yy += c.height + gap * S; }
+  const res = { pics, url: all.toDataURL("image/png") };
+  calCache.set(key, res);
+  return res;
 }
 const COMM_FONT ="font-family: 'Times New Roman', Georgia, serif; font-size: 16px; color: #111; line-height: 1.35;";
 function commHtml(row) {
@@ -1140,7 +1170,17 @@ function commHtml(row) {
   const coll = ((state.cal && state.cal.collections) || {})[row.service_date.slice(0, 7)] || (T.collections || {})[String(d.getMonth() + 1)];
   const blank =`<span style="color:#888">(add here)</span>`;
   const pic = calendarPicture(T, d);
-  const calImg = pic ? `<p style="margin:14px 0 4px"><img src="${pic.url}" width="${pic.width}" alt="Calendar" style="max-width:100%; height:auto; display:block; border:0"></p>` : "";
+  // one picture per month, 640 wide, shrinking on a phone (max-width 100%)
+  const calImg = pic ? pic.pics.map(p => `<p style="margin:14px 0 4px"><img src="${p.url}" width="${p.width}" alt="${esc(p.label)} calendar" style="width:100%; max-width:${p.width}px; height:auto; display:block; border:0"></p>`).join("") : "";
+  // "Coming up": the next two weeks as text, easy to read on a phone (Russ: "looks good on PC and mobile")
+  const calMonths = (state.cal && state.cal.months) || T.calendar || {};
+  const soon = [];
+  for (let i = 1; i <= 14; i++) {
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i);
+    const lines = ((calMonths[`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`] || {})[String(t.getDate())] || []);
+    if (lines.length) soon.push(`<b>${t.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> – ${lines.map(esc).join("; ")}`);
+  }
+  const comingUp = soon.length ? H("Coming up:") + ul(soon) : "";
   return `<div style="${COMM_FONT}">` +
     `<p style="text-align:center; margin:0"><b>${esc(T.title || "MORRIS NORTH APOSTOLIC CHRISTIAN CHURCH COMMUNICATIONS")}</b></p>` +
     `<p style="text-align:center; margin:6px 0 14px; font-size:20px"><b>${longDate}</b></p>` +
@@ -1149,8 +1189,8 @@ function commHtml(row) {
     H("Food for Thought:") + ul([blank]) +
     H("Prayer Requests:") + ul([blank]) +
     H("New Notes:") + ul(notes.length ? notes : [blank]) +
-    calImg +
-    (greet.length ? H("Greetings were received from:") + ul(greet) : "") +
+    comingUp + calImg +
+    // greetings are on their own tab for now (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab")
     (coll && !pic ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${esc(coll)}</p>` : "") +
     (looks.length ? H("Lookaheads") + ul(looks) : "") +
     ((T.churchInfo || []).length ? H("Church Service Information:") + ul(T.churchInfo) : "") +
@@ -1167,6 +1207,8 @@ const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building F
   lookaheads: ["<b>Communion</b> at Morris North = April 10, 2027"],
   churchInfo: ["Morris North Apostolic Christian Church address: <b>418 Birch Ave</b>, Morris, MN 56267"],
   ministers: [{ name: "(the ministers' phone numbers and emails come from the template on the PC)", lines: [] }],
+  shortNames: { "Wednesday Evening Service": "Church", "Church Services in Rochester - Morris North's Turn": "Rochester Church (our turn)", "Brookings Church — Morris North's Turn": "Brookings Church (our turn)",
+    "Food Packing Event - Sharing Love & Hope": "Food Packing SLH", "Christmas Program - PM Service": "Christmas Program" },
   calendar: { "2026-11": { 1: ["Lunch: (family)"], 4: ["Brookings", "Church 7:00", "Church 7:30"], 8: ["Lunch: (family)", "Bible Class SLH 4:30"],
       15: ["Lunch: (family)"], 18: ["Rochester", "Church 7:00", "Church 7:30"], 22: ["Lunch: (family)"], 25: ["Thanksgiving", "service 7:30"], 26: ["THANKSGIVING"], 29: ["Lunch: (family)"] },
     "2026-12": { 2: ["Church 7:30"], 13: ["Lunch: (family)", "Christmas Program 12:30", "Caroling 2:45", "Potluck 5:00"], 16: ["Church 7:30"], 25: ["CHRISTMAS", "Service 10am"] } } };
@@ -1406,7 +1448,7 @@ function renderProcessMap() {
         step(6, "Stream stopped", "Stops OBS and Rocket Broadcaster and lets the recordings finish writing. Three ways, whichever comes first: near the end the PC watches the platform in the camera picture and stops 5 minutes after the ministers have walked off (a kneeling prayer is shorter); anyone on the list can press “Service is over: stop the stream now” on the Now tab (the PC stops within a minute); or the set time. If the stream was already stopped, the set time does nothing more. Then on to step 7.", ["Camera", "OBS", "Rocket Broadcaster", "Now tab"])),
       phase("After", "about 30 to 40 minutes, no one needed",
         step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns. Before the service the hymn numbers are looked up in the Tabernacle / Hymns of Zion book first, from the hymn right before the service (5 min before a minister is first heard) in Zion's Harp first; a hymnal named in the announcement wins.", ["Church PC only"]),
-        step(null, "Announcements (Sundays)", "From the last minutes of the recording the PC sends only the words after the closing prayer to Claude, which lists the greetings from other churches (names and places from AC Central's church list) and the announcements. After the afternoon service the morning's and afternoon's are combined, each once, on the Announcements tab.", ["Claude API", "Announcements tab"]),
+        step(null, "Announcements (Sundays)", "From the last minutes of the recording the PC sends only the words after the closing prayer to Claude, which lists the greetings from other churches (names and places from AC Central's church list) and the announcements. After the afternoon service the morning's and afternoon's are combined, each once, on the Announcements tab (with the weekly email, its calendar from the church Google Calendar); the greetings on the Greetings tab.", ["Claude API", "Google Calendar", "Announcements tab"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
         step(9, "Video uploaded to Vimeo", "Uploads the trimmed video, unlisted, to the Morris North folder.", ["Vimeo"]),
         step(10, "Sermon entry on AC Central", "Adds the sermon: date, service, minister, readings, the audio file and the video link.", ["AC Central"]),
@@ -2053,7 +2095,7 @@ async function refresh() {
     await load();
     const statsTab = DATA_TABS.includes(state.tab);
     if (statsTab && (!state.sermons || Date.now() - state.statsAt > 10 * 60e3)) { await loadStats(); if (state.crEdit === null) render(); }
-    if (state.tab === "announcements" && (!state.ann || Date.now() - state.annAt > 5 * 60e3)) await loadAnn();
+    if ((state.tab === "announcements" || state.tab === "greetings") && (!state.ann || Date.now() - state.annAt > 5 * 60e3)) await loadAnn();
     // do not redraw under an open confirmation, a form being filled in, the admin list or the stats being looked at
     // ... nor while the weekly email is being edited (Announcements tab)
     const typing = document.activeElement && (["INPUT", "SELECT"].includes(document.activeElement.tagName) || document.activeElement.isContentEditable);
