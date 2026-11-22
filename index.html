@@ -982,11 +982,10 @@ function renderAnnouncements() {
     const greetings = view === "both" ? (both.greetings || []) : (src ? src.greetings || [] : []);
     const anns = view === "both" ? (both.announcements || []) : (src ? src.announcements || [] : []);
     const tag = (f) => view === "both" && f && f !== "both" ? el("span", { class: "anntag" }, f) : null;
-    // "West Lafayette, IN (AM)" (Russ, 2026-11-22)
-    const when = (f) => view === "both" && f ? ` (${f === "both" ? "AM & PM" : f})` : "";
+    // "West Lafayette, IN" (Russ, 2026-11-22; the "(AM)" after it was taken off the same day)
     const gLine = (g) => g.church
-      ? el("li", {}, greetName(g) + when(g.from))
-      : el("li", {}, `“${g.heard || "?"}”` + when(g.from), el("span", { class: "hint" }, " not on the church list"));
+      ? el("li", {}, greetName(g))
+      : el("li", {}, `“${g.heard || "?"}”`, el("span", { class: "hint" }, " not on the church list"));
     const switcher = el("div", { class: "annview" }, ...[["both", "Both"], ["AM", "AM"], ["PM", "PM"]].map(([k, label]) =>
       el("button", { class: "small" + (view === k ? " on" : ""), disabled: (k === "AM" && !am) || (k === "PM" && !pm) ? "" : null,
         onclick: () => { state.annView[row.service_date] = k; render(); } }, label)));
