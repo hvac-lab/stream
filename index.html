@@ -1267,7 +1267,9 @@ function commHtml(row) {
     if (lines.length) soon.push(`<b>${t.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b>` +
       (lines.length === 1 ? ` – ${esc(lines[0])}` : lines.map(l => `<br>${esc(l)}`).join("")));
   }
-  const comingUp = soon.length ? H("Coming up:") + ul(soon) : "";
+  // the "Coming up" list is left out of the email (Russ, 2026-11-22: "Remove this section ... Normally the minister
+  // will announce a wed service"); the calendar pictures show the same days
+  const comingUp = "";
   return `<div style="${COMM_FONT}">` +
     `<p style="text-align:center; margin:0"><b>${esc(T.title || "MORRIS NORTH APOSTOLIC CHRISTIAN CHURCH COMMUNICATIONS")}</b></p>` +
     `<p style="text-align:center; margin:6px 0 14px; font-size:20px"><b>${longDate}</b></p>` +
