@@ -995,7 +995,9 @@ function renderAnnouncements() {
   state.annView = state.annView || {};
   for (const row of state.ann) {
     const am = row.am, pm = row.pm, both = row.combined || {};
-    const view = state.annView[row.service_date] || "both";
+    // always the day's combined list, updated after each service (Russ, 2026-11-22: "Remove the Both / AM / PM. Just
+    // update as needed" and "Remove Morning and afternoon")
+    const view = "both";
     const status = pm && am ? "Morning and afternoon" : pm ? "Afternoon only" : "Morning so far (afternoon not done yet)";
     const pick = (p) => (p && p.found ? p : null);
     const src = view === "AM" ? pick(am) : view === "PM" ? pick(pm) : null;
@@ -1013,13 +1015,13 @@ function renderAnnouncements() {
     const win = [am && am.found ? `AM ${am.window}` : null, pm && pm.found ? `PM ${pm.window}` : null].filter(Boolean).join(" · ");
     // announcements first, then the greetings (Russ, 2026-11-22: "the Announcements go on top")
     kids.push(el("section", { class: "card ann" },
-      el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date))), el("span", { class: "hint" }, status), switcher),
+      el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date)))),
       missing,
       el("h4", {}, `Announcements · ${anns.length}`),
       anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => {
         const s = document.createElement("span"); s.innerHTML = linkNames(String(a.text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])), commLinks());
         s.querySelectorAll("a").forEach(x => { x.target = "_blank"; x.rel = "noopener"; });
-        return el("li", {}, s, tag(a.from));
+        return el("li", {}, s);
       })) : el("p", { class: "hint" }, "None."),
       // the greetings moved to their own tab (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab for now")
       // the "From the recording ..." line is gone (Russ, 2026-11-22: "Remove From the recording: AM 11:17-11:18 ...")
@@ -1242,7 +1244,8 @@ function commEmail(row) {
   const prev = el("div", { class: "mailprev", contenteditable: editing ? "true" : null });
   prev.innerHTML = saved || commHtml(row);
   prev.addEventListener("input", () => store.set("mail." + key, prev.innerHTML));
-  const msg = el("span", { class: "hint" }, saved ? "Your edits (kept in this browser)." : "Made from Sunday's recording.");
+  // no "Made from Sunday's recording." (Russ, 2026-11-22: "Remove Made from Sunday's recording.")
+  const msg = el("span", { class: "hint" }, saved ? "Your edits (kept in this browser)." : "");
   const copy = el("button", { class: "small", onclick: async () => {
     const html = prev.innerHTML, text = prev.innerText;
     try {
