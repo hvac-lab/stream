@@ -967,10 +967,10 @@ async function loadAnn() {
   if (demo && params.get("calfile") && !state.cal) { try { state.cal = await (await fetch(params.get("calfile"), { cache: "no-store" })).json(); } catch {} }
   if (demo) { state.ann = demoAnn(); state.annAt = Date.now(); return; }
   const base = "service_date,am,pm,combined,updated_at";
-  let { data, error } = await state.sb.from("stream_announcements").select(base + ",prayers,prayers_carried,prayers_by,prayers_at")
+  let { data, error } = await state.sb.from("stream_announcements").select(base + ",prayers,prayers_carried,prayers_by,prayers_at,food,food_by,food_at")
     .order("service_date", { ascending: false }).limit(104);
-  // until supabase\stream_status_8.sql has been run the prayer columns are missing: load without them, box waits
-  state.noPrayers = !!(error && /prayers/i.test(error.message || ""));
+  // until supabase\stream_status_8.sql has been run the prayer / food columns are missing: load without them, boxes wait
+  state.noPrayers = !!(error && /prayers|food/i.test(error.message || ""));
   if (state.noPrayers) ({ data, error } = await state.sb.from("stream_announcements").select(base).order("service_date", { ascending: false }).limit(104));
   if (error) throw new Error(`stream_announcements: ${error.message}`);
   state.ann = data || []; state.annAt = Date.now();
@@ -980,30 +980,42 @@ async function loadAnn() {
 // surgery"). One request per line, saved for everyone (stream_set_prayers, supabase\stream_status_8.sql). After a
 // Sunday's service the church PC fills an empty list from the Sunday before, past dates reworded by Claude
 // (Update-Announcements.ps1 -> announcements.py --carry-prayers); the weekly email's Prayer Requests use this list.
-function prayerBox(row) {
-  if (state.noPrayers) return el("p", { class: "muted small" }, "Prayer requests: coming soon (the database part is not set up yet).");
+// Food for Thought works the same way (Russ, 2026-11-22: "Make these sections editable"): food / stream_set_food.
+const SECTION_BOXES = {
+  food: { title: "Food for Thought", rpc: "stream_set_food", rows: 4,
+    placeholder: "A verse, a thought or a short story. Each line becomes one point in the email." },
+  prayers: { title: "Prayer Requests", rpc: "stream_set_prayers", rows: 3, carried: "prayers_carried",
+    placeholder: "One prayer request per line" },
+};
+function sectionBox(row, field) {
+  const S = SECTION_BOXES[field];
+  if (state.noPrayers) return el("p", { class: "muted small" }, `${S.title}: coming soon (the database part is not set up yet).`);
   const key = row.service_date;
-  state.prayDraft = state.prayDraft || {};
-  const saved = Array.isArray(row.prayers) ? row.prayers : [];
-  const ta = el("textarea", { class: "praybox", rows: String(Math.max(3, saved.length + 1)), placeholder: "One prayer request per line" });
-  ta.value = key in state.prayDraft ? state.prayDraft[key] : saved.join("\n");
+  state.secDraft = state.secDraft || {};
+  const dk = field + "." + key;
+  const saved = Array.isArray(row[field]) ? row[field] : [];
+  const ta = el("textarea", { class: "praybox", rows: String(Math.max(S.rows, saved.length + 1)), placeholder: S.placeholder });
+  ta.value = dk in state.secDraft ? state.secDraft[dk] : saved.join("\n");
+  const at = row[field + "_at"], by = row[field + "_by"];
   const msg = el("span", { class: "hint" },
-    key in state.prayDraft ? "Not saved yet." :
-    row.prayers_carried ? "Carried over from the Sunday before (dates that have passed reworded). Check, change and Save." :
-    row.prayers_at ? `Saved ${fmtDate(new Date(row.prayers_at))} ${fmtTime(new Date(row.prayers_at))}${row.prayers_by ? " by " + row.prayers_by : ""}.` : "");
-  ta.addEventListener("input", () => { state.prayDraft[key] = ta.value; msg.textContent = "Not saved yet."; });
+    dk in state.secDraft ? "Not saved yet." :
+    S.carried && row[S.carried] ? "Carried over from the Sunday before (dates that have passed reworded). Check, change and Save." :
+    at ? `Saved ${fmtDate(new Date(at))} ${fmtTime(new Date(at))}${by ? " by " + by : ""}.` : "");
+  ta.addEventListener("input", () => { state.secDraft[dk] = ta.value; msg.textContent = "Not saved yet."; });
   const save = el("button", { class: "small", onclick: async () => {
-    if (demo) { msg.textContent = "Demo: not saved."; return; }
-    save.disabled = true; msg.textContent = "Saving…";
     const items = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const { error } = await state.sb.rpc("stream_set_prayers", { p_date: key, p_items: items });
-    save.disabled = false;
-    if (error) { msg.textContent = "Not saved: " + error.message; return; }
-    delete state.prayDraft[key];
-    Object.assign(row, { prayers: items, prayers_carried: false, prayers_at: new Date().toISOString(), prayers_by: (state.user && state.user.email) || "" });
+    if (!demo) {
+      save.disabled = true; msg.textContent = "Saving…";
+      const { error } = await state.sb.rpc(S.rpc, { p_date: key, p_items: items });
+      save.disabled = false;
+      if (error) { msg.textContent = "Not saved: " + error.message; return; }
+    }
+    delete state.secDraft[dk];
+    Object.assign(row, { [field]: items, [field + "_at"]: new Date().toISOString(), [field + "_by"]: demo ? "demo (not saved)" : (state.user && state.user.email) || "" },
+      S.carried ? { [S.carried]: false } : {});
     render();
   } }, "Save");
-  return el("div", { class: "praywrap" }, el("h4", {}, "Prayer requests"), ta, el("div", { class: "mailbar" }, save, msg));
+  return el("div", { class: "praywrap" }, el("h4", {}, S.title), ta, el("div", { class: "mailbar" }, save, msg));
 }
 
 // Greetings tab (Russ, 2026-11-22: "Remove the Greetings from other churches ... from the announcements, put them in a
@@ -1061,7 +1073,8 @@ function renderAnnouncements() {
       })) : el("p", { class: "hint" }, "None."),
       // the greetings moved to their own tab (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab for now")
       // the "From the recording ..." line is gone (Russ, 2026-11-22: "Remove From the recording: AM 11:17-11:18 ...")
-      prayerBox(row),
+      sectionBox(row, "food"),
+      sectionBox(row, "prayers"),
       commEmail(row)));
   }
   screen(...kids);
@@ -1259,8 +1272,8 @@ function commHtml(row) {
     `<p style="text-align:center; margin:6px 0 14px; font-size:20px"><b>${longDate}</b></p>` +
     `<p style="margin:0"><b>${esc(T.opening || "Greetings in the name of Jesus!")}</b></p>` +
     H("Scripture Readings:") + (rd.length ? ul(rd) : ul([blank])) +
-    H("Food for Thought:") + ul([blank]) +
-    // the Sunday's prayer requests (the box on the card; carried from the week before by the PC)
+    // both from the boxes on the card (prayer requests carried from the week before by the PC)
+    H("Food for Thought:") + ul((Array.isArray(row.food) && row.food.length) ? row.food.map(p => linkNames(linkify(p), T.links)) : [blank]) +
     H("Prayer Requests:") + ul((Array.isArray(row.prayers) && row.prayers.length) ? row.prayers.map(p => linkNames(esc(p), T.links)) : [blank]) +
     H("New Notes:") + ul(notes.length ? notes : [blank]) +
     comingUp + calImg +
@@ -1304,7 +1317,7 @@ function commEmail(row) {
   prev.innerHTML = saved || commHtml(row);
   prev.addEventListener("input", () => store.set("mail." + key, prev.innerHTML));
   // no "Made from Sunday's recording." (Russ, 2026-11-22: "Remove Made from Sunday's recording.")
-  const msg = el("span", { class: "hint" }, saved ? "Your edits (kept in this browser)." : "");
+  const msg = el("span", { class: "hint" }, saved ? "Your edits (kept in this browser). Reset shows changes made in the boxes above." : "");
   const copy = el("button", { class: "small", onclick: async () => {
     const html = prev.innerHTML, text = prev.innerText;
     try {
