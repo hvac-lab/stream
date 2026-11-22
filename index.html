@@ -1097,34 +1097,44 @@ function churchMapNode(churches, counts) {
       const s = svg.getBoundingClientRect().width / vb[2] || 1;   // screen pixels per map unit at zoom 1
       const showNames = k >= 2.2, placed = [];
       for (const m of [...marks].sort((a, b) => b.n - a.n || a.c.name.localeCompare(b.c.name))) {
-        const r = m.r0 / Math.sqrt(k);                 // circles grow a little slower than the map
-        m.dot.setAttribute("r", r.toFixed(2));
-        if (m.num) { m.num.style.fontSize = `${(11 / Math.sqrt(k)).toFixed(2)}px`; m.num.setAttribute("y", (m.p[1] + 4 / Math.sqrt(k)).toFixed(2)); }
+        const grow = Math.min(Math.sqrt(k), 1.8), r = m.r0 * grow / k;   // on screen at most 1.8x their first size
+        m.dot.setAttribute("r", r.toFixed(3));
+        if (m.num) { m.num.style.fontSize = `${(11 * grow / k).toFixed(3)}px`; m.num.setAttribute("y", (m.p[1] + 4 * grow / k).toFixed(3)); }
         let show = false;
         if (showNames) {
           const fs = 13 / (k * s), sx = (m.p[0] * k + tx) * s, sy = (m.p[1] * k + ty) * s, rp = r * k * s;   // 13 screen px
-          const box = [sx + rp + 3, sy - 9, sx + rp + 5 + m.c.name.length * 7.2, sy + 9];
-          show = !placed.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);
+          const w = m.c.name.length * 7.2 + 2, free = (b) => !placed.some(o => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
+          const right = [sx + rp + 3, sy - 9, sx + rp + 3 + w, sy + 9], left = [sx - rp - 3 - w, sy - 9, sx - rp - 3, sy + 9];
+          const side = free(right) ? "right" : free(left) ? "left" : "";   // the name on the left when the right is taken
+          show = !!side;
           if (show) {
-            placed.push(box);
-            m.label.setAttribute("x", (m.p[0] + r + 3 / (k * s)).toFixed(2));
+            placed.push(side === "right" ? right : left);
+            m.label.setAttribute("text-anchor", side === "right" ? "start" : "end");
+            m.label.setAttribute("x", (m.p[0] + (side === "right" ? 1 : -1) * (r + 3 / (k * s))).toFixed(3));
             m.label.style.fontSize = `${fs.toFixed(3)}px`; m.label.style.strokeWidth = `${(3 / (k * s)).toFixed(3)}px`;
           }
         }
         m.label.style.display = show ? "" : "none";
       }
     };
-    const zoom = d3.zoom().scaleExtent([1, 14]).translateExtent([[vb[0], vb[1]], [vb[0] + vb[2], vb[1] + vb[3]]])
+    // up to 60x (Russ, 2026-11-22: "I need to be able to zoom in more on the PC"); drag with the mouse to move around
+    const zoom = d3.zoom().scaleExtent([1, 60]).translateExtent([[vb[0], vb[1]], [vb[0] + vb[2], vb[1] + vb[3]]])
       .filter((e) => e.type === "wheel" ? true : e.type.startsWith("touch") ? (e.touches && e.touches.length > 1) : !e.button)
+      .wheelDelta((e) => -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * 2)   // each wheel step zooms twice as far
+      .on("start", () => { svg.style.cursor = "grabbing"; })
+      .on("end", () => { svg.style.cursor = "grab"; })
       .on("zoom", (e) => { ({ k, x: tx, y: ty } = e.transform); zoomG.setAttribute("transform", e.transform.toString()); layout(); });
-    const sel = d3.select(svg).call(zoom).on("dblclick.zoom", null);
+    const sel = d3.select(svg).call(zoom);   // double-click zooms in too
     svg.style.touchAction = "pan-y";   // one finger scrolls the page; two fingers pinch / drag the map
     const btn = (label, title, fn) => el("button", { class: "small", title, onclick: fn }, label);
+    // move by a third of the window (Russ: "drag a window to scroll different directions")
+    const move = (dx, dy) => () => { const w = vb[2] / 3 / k, h = vb[3] / 3 / k; sel.transition().duration(250).call(zoom.translateBy, dx * w, dy * h); };
     const bar = el("div", { class: "mailbar gmapbar" },
       btn("+", "Zoom in", () => sel.transition().duration(250).call(zoom.scaleBy, 1.8)),
       btn("−", "Zoom out", () => sel.transition().duration(250).call(zoom.scaleBy, 1 / 1.8)),
+      btn("←", "Move left", move(1, 0)), btn("↑", "Move up", move(0, 1)), btn("↓", "Move down", move(0, -1)), btn("→", "Move right", move(-1, 0)),
       btn("Whole map", "Back to the whole map", () => sel.transition().duration(300).call(zoom.transform, d3.zoomIdentity)),
-      el("span", { class: "hint" }, "Zoom in for the names: mouse wheel or + on a PC, two fingers on a phone."));
+      el("span", { class: "hint" }, "PC: mouse wheel or + to zoom, drag to move. Phone: two fingers to zoom and move."));
     holder.replaceChildren(bar, svg, info, el("p", { class: "hint", style: "margin:2px 0 0" }, "Blue: greetings in the time frame (the number in the circle); gray: none; orange: Morris North."));
     requestAnimationFrame(layout);
   }).catch(() => { holder.replaceChildren(el("p", { class: "hint" }, "The map could not be loaded.")); });
