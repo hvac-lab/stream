@@ -239,6 +239,7 @@
   nav.subtabs button { border: 0; border-radius: 0; background: none; padding: 8px 14px; color: var(--ink-2); border-bottom: 3px solid transparent; margin-bottom: -1px; }
   nav.subtabs button.on { color: var(--ink); font-weight: 650; border-bottom-color: var(--s1); }
   nav.subtabs.annsub { margin: 0 0 14px; }
+  .gmap svg { width: 100%; height: auto; display: block; }
   .toolbar { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
   .toolbar label { font-size: 13px; color: var(--ink-2); display:inline-flex; gap: 6px; align-items: center; }
   input[type=date] { font: inherit; font-size: 15px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
@@ -525,6 +526,7 @@ async function load() {
   state.live = m.live || null;     // live speaker / hymn (Watch-Live.ps1 + analyze\live.py, 2026-11-15)
   state.comm = m.communication || null;   // standing parts of the weekly email (config\communication.json, 2026-11-22)
   state.cal = m.calendar || null;         // the church Google Calendar, read hourly by the PC (Update-Calendar.ps1)
+  state.churchMap = m.churches || null;  // church locations for the Greetings map (Update-ChurchMap.ps1, 2026-11-22)
   state.watching = m.viewers || null;   // watching / listening now (stream_meta 'viewers'; state.viewers is the Viewers tab) (Watch-Viewers.ps1 + publish\live-viewers.js, 2026-11-18)
 }
 function setPc() {
@@ -1031,13 +1033,96 @@ function sectionBox(row, field) {
 }
 
 // Greetings tab (Russ, 2026-11-22: "Remove the Greetings from other churches ... from the announcements, put them in a
-// new tab for now"): the same Sunday rows, one card per Sunday with the churches that sent greetings (AM and PM together).
+// new tab for now"; then "Include Wed ... Create a table at the top of a tally of only the churches where greetings
+// were given. Time frame 2026, past 12 months, all time, custom. Under the table, show a map of the US of all churches,
+// the total greetings from each church, 0 is fine"). A greeting counts once per service (AM and PM = 2; a Wednesday 1).
+// Church locations: stream_meta 'churches' (scripts\Update-ChurchMap.ps1). Map: d3 + us-atlas, loaded when shown.
+async function loadMapLibs() {
+  const add = (src) => new Promise((ok, no) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.append(s); });
+  if (!window.d3) await add("https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js");
+  if (!window.topojson) await add("https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js");
+  if (!state.usStates) state.usStates = await (await fetch("https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-albers-10m.json")).json();
+}
+function churchMapNode(churches, counts) {
+  const key = JSON.stringify([churches.length, [...counts.entries()].sort()]);
+  if (state.mapCache && state.mapCache.key === key) return state.mapCache.node;
+  const holder = el("div", { class: "gmap" }, el("p", { class: "hint" }, "Loading the map…"));
+  state.mapCache = { key, node: holder };
+  loadMapLibs().then(() => {
+    const NS = "http://www.w3.org/2000/svg", mk = (t, a = {}) => { const n = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) n.setAttribute(k, v); return n; };
+    const svg = mk("svg", { viewBox: "0 0 975 610", role: "img", "aria-label": "Map of the churches and their greetings" });
+    const us = state.usStates, path = d3.geoPath();
+    const land = mk("path", { d: path(topojson.feature(us, us.objects.states)) }); land.style.cssText = "fill:var(--band);stroke:none";
+    const borders = mk("path", { d: path(topojson.mesh(us, us.objects.states, (a, b) => a !== b)) }); borders.style.cssText = "fill:none;stroke:var(--muted);stroke-width:0.7;opacity:.6";
+    const outline = mk("path", { d: path(topojson.mesh(us, us.objects.nation || us.objects.states, (a, b) => a === b)) }); outline.style.cssText = "fill:none;stroke:var(--muted);stroke-width:1";
+    svg.append(land, borders, outline);
+    const proj = d3.geoAlbersUsa().scale(1300).translate([487.5, 305]);
+    const pts = churches.filter(c => c.lat != null).map(c => ({ c, n: counts.get(c.name) || 0, p: proj([c.lon, c.lat]) })).filter(x => x.p);
+    pts.sort((a, b) => a.n - b.n);   // the bigger circles on top
+    for (const { c, n, p } of pts) {
+      const home = c.name === "Morris North", r = n ? 9 + 4 * Math.sqrt(n) : home ? 7 : 4.5;
+      const g = mk("g"); const t = mk("title"); t.textContent = `${c.name} (${c.town}, ${c.state}): ${n} greeting${n === 1 ? "" : "s"}`; g.append(t);
+      const dot = mk("circle", { cx: p[0].toFixed(1), cy: p[1].toFixed(1), r: r.toFixed(1) });
+      dot.style.cssText = home ? "fill:var(--s2);stroke:var(--surface);stroke-width:1.5" : n ? "fill:var(--s1);fill-opacity:.85;stroke:var(--surface);stroke-width:1.5" : "fill:var(--muted);fill-opacity:.55";
+      g.append(dot);
+      if (n) { const tx = mk("text", { x: p[0].toFixed(1), y: (p[1] + 4).toFixed(1), "text-anchor": "middle" }); tx.style.cssText = "fill:#fff;font:600 11px system-ui,sans-serif;pointer-events:none"; tx.textContent = n; g.append(tx); }
+      svg.append(g);
+    }
+    holder.replaceChildren(svg, el("p", { class: "hint", style: "margin:6px 0 0" }, "Blue: greetings in the time frame (the number in the circle); gray: none; orange: Morris North. Hover or tap a circle for the church."));
+  }).catch(() => { holder.replaceChildren(el("p", { class: "hint" }, "The map could not be loaded.")); });
+  return holder;
+}
 function renderGreetings() {
   if (!state.ann) return screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading the greetings…")));
-  const kids = [el("section", { class: "card" }, el("h2", {}, "Greetings from other churches"),
-    el("p", { class: "hint", style: "margin:0" }, "Sundays only: the churches visitors brought greetings from at the end of the services, ",
-      "with names and places from AC Central's church list. From the recording, read by Claude; check anything important."))];
-  if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No Sundays yet.")));
+  // the time frame (shared with the Stats tabs): this year, past 12 months, all, or From / To
+  const first = state.ann.reduce((a, r) => !a || r.service_date < a ? r.service_date : a, "");
+  const { from, to } = frameRange(String(first).slice(0, 10));
+  const frameBtns = el("div", { class: "seg" }, ...[...FRAMES.slice(0, 2), ["all", "All time"]].map(([k, label]) =>
+    el("button", { class: state.frame === k ? "on" : "", onclick: () => { state.frame = k; store.set("frame", k); render(); } }, label)));
+  const setDates = (f, t) => { state.frame = "custom"; state.frameDates = { from: f, to: t }; store.set("frame", "custom"); store.set("frameDates", state.frameDates); render(); };
+  const kids = [el("div", { class: "toolbar" }, frameBtns),
+    el("div", { class: "toolbar", style: "margin-top:-6px" }, el("label", {}, "From", el("input", { type: "date", value: from, onchange: (e) => setDates(e.target.value, to) })),
+      el("label", {}, "To", el("input", { type: "date", value: to, onchange: (e) => setDates(from, e.target.value) })),
+      el("span", { class: "hint" }, from ? `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}` : ""))];
+  // the tally: only churches that sent greetings in the frame
+  const counts = new Map(), last = new Map(), place = new Map(); let unmatched = 0, services = 0;
+  for (const row of state.ann) {
+    const d = String(row.service_date).slice(0, 10);
+    if (d < from || d > to) continue;
+    services++;
+    for (const g of (row.combined || {}).greetings || []) {
+      if (!g.church) { unmatched++; continue; }
+      counts.set(g.church, (counts.get(g.church) || 0) + (g.from === "both" ? 2 : 1));
+      if (!last.has(g.church) || d > last.get(g.church)) last.set(g.church, d);
+      place.set(g.church, greetName(g).replace(/^[^,]*,\s*/, "") || "");
+    }
+  }
+  const churchList = ((state.churchMap || {}).churches) || (demo ? [
+    { name: "Morris North", town: "Morris", state: "MN", lat: 45.574, lon: -95.896 }, { name: "Bloomington-Normal", town: "Normal", state: "IL", lat: 40.51, lon: -88.99 },
+    { name: "Gridley", town: "Gridley", state: "IL", lat: 40.743, lon: -88.881 }, { name: "Sabetha", town: "Sabetha", state: "KS", lat: 39.902, lon: -95.808 },
+    { name: "Wolcott", town: "Wolcott", state: "IN", lat: 40.754, lon: -87.042 }, { name: "Altadena-LA", town: "Altadena", state: "CA", lat: 34.19, lon: -118.13 },
+    { name: "Tokyo", town: "Tokyo", state: "Tokyo", lat: null, lon: null }] : []);
+  const where = (name) => { const c = churchList.find(x => x.name === name); return c ? [c.town, c.state].filter(Boolean).join(", ") : place.get(name) || ""; };
+  const rows = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const total = rows.reduce((s, r) => s + r[1], 0);
+  const tbl = el("table", { class: "data" }, el("tr", {}, el("th", {}, "Church"), el("th", {}, "Place"), el("th", { class: "nc" }, "Greetings"), el("th", { class: "nc" }, "Last")),
+    ...rows.map(([n, k]) => el("tr", {}, el("td", {}, n), el("td", {}, where(n)), el("td", { class: "nc" }, String(k)), el("td", { class: "nc" }, fmtDate(parseYmd(last.get(n)))))),
+    el("tr", {}, el("td", {}, el("b", {}, "Total")), el("td", {}, `${rows.length} church${rows.length === 1 ? "" : "es"}`), el("td", { class: "nc" }, el("b", {}, String(total))), el("td", {})));
+  kids.push(el("section", { class: "card" }, el("h3", {}, "Greetings by church"),
+    rows.length ? tbl : el("p", { class: "hint" }, "No greetings in this time frame."),
+    el("p", { class: "hint", style: "margin:8px 0 0" }, `${services} service day${services === 1 ? "" : "s"} in the time frame; a church greeting at the morning and the afternoon service counts 2.`,
+      unmatched ? ` ${unmatched} greeting${unmatched === 1 ? "" : "s"} not matched to a church (see the days below).` : "")));
+  // the map: every church, its count in the frame (0 is fine)
+  const mapCard = el("section", { class: "card" }, el("h3", {}, "Our churches"));
+  if (!churchList.length) mapCard.append(el("p", { class: "hint" }, "The church locations are not on the page yet."));
+  else {
+    mapCard.append(churchMapNode(churchList, counts));
+    const away = churchList.filter(c => c.lat == null);
+    if (away.length) mapCard.append(el("p", { class: "hint", style: "margin:4px 0 0" }, "Not on the map (outside the US or no address): ",
+      away.map(c => `${c.name}${c.town || c.state ? " (" + [c.town, c.state].filter(Boolean).join(", ") + ")" : ""}: ${counts.get(c.name) || 0}`).join(" · ")));
+  }
+  kids.push(mapCard);
+  if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No services yet.")));
   for (const row of state.ann) {
     const gs = (row.combined || {}).greetings || [];
     kids.push(el("section", { class: "card ann" },
@@ -1155,6 +1240,7 @@ function renderAnnouncements() {
   if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No Sundays yet.")));
   state.annView = state.annView || {};
   for (const row of state.ann) {
+    if (parseYmd(row.service_date).getDay() !== 0) continue;   // Sundays only here; Wednesdays feed the Greetings tab
     const am = row.am, pm = row.pm, both = row.combined || {};
     // always the day's combined list, updated after each service (Russ, 2026-11-22: "Remove the Both / AM / PM. Just
     // update as needed" and "Remove Morning and afternoon")
