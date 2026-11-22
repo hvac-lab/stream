@@ -1018,6 +1018,81 @@ const greetName = (g) => {
   const st = String(g.place || "").split(",").pop().trim();
   return st ? `${g.church}, ${st}` : g.church;
 };
+// The month calendars as ONE picture under New Notes (Russ, 2026-11-22, idea #4: "a calendar picture in the email ...
+// Add it to the email under announcements"), drawn like the PDF's: "Lord willing...", the month's collection, the month,
+// Sun-Sat boxes with the lines of each day. From the template's calendar ('YYYY-MM' -> day -> lines): the Sunday's
+// month and the next two that are there. Drawn at twice the size so it stays sharp; kept per content.
+const calCache = new Map();
+function calendarPicture(T, d) {
+  const cal = (T && T.calendar) || {};
+  const months = [];
+  for (let i = 0; i < 3; i++) {
+    const m = new Date(d.getFullYear(), d.getMonth() + i, 1);
+    const k = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
+    if (cal[k]) months.push([m, cal[k]]);
+  }
+  if (!months.length) return null;
+  const key = JSON.stringify([months.map(([m, e]) => [m.getTime(), e]), T.collections || {}]);
+  if (calCache.has(key)) return calCache.get(key);
+  const S = 2, W = 900, cw = W / 7, top = 18, head = 56, wk = 26, minRow = 100, lineH = 15, gap = 22;
+  const rowsOf = (m) => Math.ceil((m.getDay() + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7);
+  const fontOf = (raw) => raw === raw.toUpperCase() && /[A-Z]/.test(raw) ? "bold 13px Arial, sans-serif" : /^lunch/i.test(raw) ? "12.5px Arial, sans-serif" : "13.5px Arial, sans-serif";
+  const mg = document.createElement("canvas").getContext("2d");   // for measuring before the size is known
+  const wrap = (ctx, text, maxW) => {      // words to lines that fit the box
+    const out = []; let line = "";
+    for (const w of String(text).split(/\s+/)) { const t = line ? line + " " + w : w; if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
+    if (line) out.push(line); return out;
+  };
+  const cellLines = (ent, day) => (ent[String(day)] || []).flatMap(raw => { mg.font = fontOf(raw); return wrap(mg, raw, cw - 10).map(l => [raw, l]); });
+  // each week's row is as tall as its busiest day needs (at least minRow)
+  const rowHs = (m, ent) => Array.from({ length: rowsOf(m) }, (_, r) => {
+    let most = 0; for (let i = 0; i < 7; i++) most = Math.max(most, cellLines(ent, r * 7 + i - m.getDay() + 1).length);
+    return Math.max(minRow, 38 + most * lineH);
+  });
+  const H = months.reduce((h, [m, ent]) => h + top + head + wk + rowHs(m, ent).reduce((a, b) => a + b, 0) + gap, 0);
+  const c = document.createElement("canvas"); c.width = W * S; c.height = H * S;
+  const g = c.getContext("2d"); g.scale(S, S);
+  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+  g.strokeStyle = "#111"; g.lineWidth = 1.2; g.textBaseline = "alphabetic";
+  let y = 0;
+  for (const [m, ent] of months) {
+    g.fillStyle = "#333"; g.font = "italic 11px Georgia, serif"; g.textAlign = "left"; g.fillText("Lord willing…", 6, y + 13);
+    y += top;
+    g.strokeRect(0.5, y + 0.5, W - 1, head);
+    g.fillStyle = "#111"; g.textAlign = "center"; g.font = "bold 26px Arial, sans-serif";
+    g.fillText(m.toLocaleDateString("en-US", { month: "long", year: "numeric" }), W / 2, y + 30);
+    const coll = (T.collections || {})[String(m.getMonth() + 1)];
+    if (coll) {
+      g.textAlign = "left"; g.font = "bold 12px Arial, sans-serif"; g.fillText("Monthly Collection = ", 8, y + 48);
+      const w0 = g.measureText("Monthly Collection = ").width; g.font = "12px Arial, sans-serif"; g.fillText(coll, 8 + w0, y + 48);
+    }
+    y += head;
+    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach((n, i) => {
+      g.strokeRect(i * cw + 0.5, y + 0.5, cw, wk); g.fillStyle = "#111"; g.font = "bold 16px Arial, sans-serif"; g.textAlign = "center"; g.fillText(n, i * cw + cw / 2, y + 19);
+    });
+    y += wk;
+    const first = m.getDay(), n = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+    const hs = rowHs(m, ent);
+    for (let r = 0; r < hs.length; r++) {
+      for (let i = 0; i < 7; i++) {
+        const x = i * cw, day = r * 7 + i - first + 1;
+        g.strokeRect(x + 0.5, y + 0.5, cw, hs[r]);
+        if (day < 1 || day > n) continue;
+        g.fillStyle = "#111"; g.textAlign = "left"; g.font = "bold 18px Arial, sans-serif"; g.fillText(String(day), x + 6, y + 20);
+        let ly = y + 38;
+        for (const [raw, l] of cellLines(ent, day)) {
+          g.font = fontOf(raw); g.fillStyle = /^lunch/i.test(raw) ? "#444" : "#111";
+          g.fillText(l, x + 5, ly); ly += lineH;
+        }
+      }
+      y += hs[r];
+    }
+    y += gap;
+  }
+  const pic = { url: c.toDataURL("image/png"), width: W, height: H };
+  calCache.set(key, pic);
+  return pic;
+}
 const COMM_FONT ="font-family: 'Times New Roman', Georgia, serif; font-size: 16px; color: #111; line-height: 1.35;";
 function commHtml(row) {
   const T = state.comm || (demo ? DEMO_COMM : {});
@@ -1038,6 +1113,8 @@ function commHtml(row) {
   const greet = (both.greetings || []).map(g => g.church ? esc(greetName(g)) : esc(g.heard));
   const coll = (T.collections || {})[String(d.getMonth() + 1)];
   const blank = `<span style="color:#888">(add here)</span>`;
+  const pic = calendarPicture(T, d);
+  const calImg = pic ? `<p style="margin:14px 0 4px"><img src="${pic.url}" width="${pic.width}" alt="Calendar" style="max-width:100%; height:auto; display:block; border:0"></p>` : "";
   return `<div style="${COMM_FONT}">` +
     `<p style="text-align:center; margin:0"><b>${esc(T.title || "MORRIS NORTH APOSTOLIC CHRISTIAN CHURCH COMMUNICATIONS")}</b></p>` +
     `<p style="text-align:center; margin:6px 0 14px; font-size:20px"><b>${longDate}</b></p>` +
@@ -1046,8 +1123,9 @@ function commHtml(row) {
     H("Food for Thought:") + ul([blank]) +
     H("Prayer Requests:") + ul([blank]) +
     H("New Notes:") + ul(notes.length ? notes : [blank]) +
+    calImg +
     (greet.length ? H("Greetings were received from:") + ul(greet) : "") +
-    (coll ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${esc(coll)}</p>` : "") +
+    (coll && !pic ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${esc(coll)}</p>` : "") +
     ((T.lookaheads || []).length ? H("Lookaheads") + ul(T.lookaheads) : "") +
     ((T.churchInfo || []).length ? H("Church Service Information:") + ul(T.churchInfo) : "") +
     ((T.ministers || []).length ? H("Minister Contact Information:") + ul(T.ministers.map(m => `${esc(m.name)}${ul(m.lines || [])}`)) : "") +
@@ -1062,7 +1140,10 @@ function commHtml(row) {
 const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building Fund" },
   lookaheads: ["<b>Communion</b> at Morris North = April 10, 2027"],
   churchInfo: ["Morris North Apostolic Christian Church address: <b>418 Birch Ave</b>, Morris, MN 56267"],
-  ministers: [{ name: "(the ministers' phone numbers and emails come from the template on the PC)", lines: [] }] };
+  ministers: [{ name: "(the ministers' phone numbers and emails come from the template on the PC)", lines: [] }],
+  calendar: { "2026-11": { 1: ["Lunch: (family)"], 4: ["Brookings", "Church 7:00", "Church 7:30"], 8: ["Lunch: (family)", "Bible Class SLH 4:30"],
+      15: ["Lunch: (family)"], 18: ["Rochester", "Church 7:00", "Church 7:30"], 22: ["Lunch: (family)"], 25: ["Thanksgiving", "service 7:30"], 26: ["THANKSGIVING"], 29: ["Lunch: (family)"] },
+    "2026-12": { 2: ["Church 7:30"], 13: ["Lunch: (family)", "Christmas Program 12:30", "Caroling 2:45", "Potluck 5:00"], 16: ["Church 7:30"], 25: ["CHRISTMAS", "Service 10am"] } } };
 function commEmail(row) {
   const key = row.service_date;
   state.commOpen = state.commOpen || new Set();
@@ -1086,6 +1167,15 @@ function commEmail(row) {
   } }, "Copy email");
   const edit = el("button", { class: "small" + (editing ? " on" : ""), onclick: () => { if (editing) state.commEdit.delete(key); else state.commEdit.add(key); render(); } }, editing ? "Done editing" : "Edit");
   const reset = saved ? el("button", { class: "small", onclick: () => { store.set("mail." + key, null); render(); } }, "Reset") : null;
+  // the calendar picture on its own: a picture pasted into Gmail always stays (Ctrl+V where it should go)
+  const calPic = calendarPicture(state.comm || (demo ? DEMO_COMM : {}), d);
+  const copyCal = calPic ? el("button", { class: "small", onclick: async () => {
+    try {
+      const blob = await (await fetch(calPic.url)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      msg.textContent = "Calendar picture copied. In Gmail click where it goes and press Ctrl+V.";
+    } catch (e) { msg.textContent = "Could not copy the picture here: right-click it in the email below and choose Copy image."; }
+  } }, "Copy calendar picture") : null;
   // Gmail's compose window in the mnorthacc@gmail.com account (it must be signed in in this browser). A Gmail link can
   // carry only the subject and plain text, so the formatted email is copied first (synchronously, inside the click, so
   // the browser allows both) and pasted into the body with Ctrl+V (Russ, 2026-11-22: "Can I click Open Gmail and it
@@ -1100,7 +1190,7 @@ function commEmail(row) {
   } }, "Open Gmail (mnorthacc)");
   const det = el("details", { class: "annmail", open: state.commOpen.has(key) ? "" : null },
     el("summary", {}, "Email: ", el("b", {}, subject)),
-    el("div", { class: "mailbar" }, copy, edit, reset, gmail, msg),
+    el("div", { class: "mailbar" }, copy, edit, reset, gmail, copyCal, msg),
     prev);
   det.addEventListener("toggle", () => { if (det.open) state.commOpen.add(key); else state.commOpen.delete(key); });
   return det;
