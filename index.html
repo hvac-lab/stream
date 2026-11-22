@@ -192,6 +192,12 @@
   .ann ul { margin: 0; padding-left: 20px; } .ann li { margin: 3px 0; }
   .ann .anntag { margin-left: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
   .ann .annfoot { margin: 12px 0 0; }
+  .ann details.annmail { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .ann details.annmail > summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
+  .ann .mailbar { display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  .ann .mailbar .btnlink { display: inline-block; border: 1px solid var(--border); border-radius: 8px; padding: 3px 10px; font-size: 13px; text-decoration: none; }
+  .ann .mailprev { background: #fff; color: #111; border: 1px solid var(--border); border-radius: 8px; padding: 18px 22px; max-width: 760px; overflow-x: auto; }
+  .ann .mailprev[contenteditable="true"] { outline: 2px solid var(--s1); outline-offset: 2px; }
   table.hist .svc-under { display: none; color: var(--ink-2); font-size: 12px; margin-left: 14px; }
   table.hist tr.detailrow > td { background: var(--page); padding: 6px 12px 16px; }
   .two { display:grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
@@ -500,6 +506,7 @@ async function load() {
   state.pcSeen = m.pc?.last_seen ? new Date(m.pc.last_seen) : null;
   state.mixer = m.mixer || null;   // Sanctuary mixer plan + results (Invoke-MixerSchedule.ps1, 2026-11-15)
   state.live = m.live || null;     // live speaker / hymn (Watch-Live.ps1 + analyze\live.py, 2026-11-15)
+  state.comm = m.communication || null;   // standing parts of the weekly email (config\communication.json, 2026-11-22)
   state.watching = m.viewers || null;   // watching / listening now (stream_meta 'viewers'; state.viewers is the Viewers tab) (Watch-Viewers.ps1 + publish\live-viewers.js, 2026-11-18)
 }
 function setPc() {
@@ -979,16 +986,101 @@ function renderAnnouncements() {
         onclick: () => { state.annView[row.service_date] = k; render(); } }, label)));
     const missing = view !== "both" && !src ? el("p", { class: "hint" }, "No greetings or announcements were found in this recording.") : null;
     const win = [am && am.found ? `AM ${am.window}` : null, pm && pm.found ? `PM ${pm.window}` : null].filter(Boolean).join(" · ");
+    // announcements first, then the greetings (Russ, 2026-11-22: "the Announcements go on top")
     kids.push(el("section", { class: "card ann" },
       el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date))), el("span", { class: "hint" }, status), switcher),
       missing,
-      el("h4", {}, `Greetings from other churches · ${greetings.length}`),
-      greetings.length ? el("ul", { class: "anngreet" }, ...greetings.map(gLine)) : el("p", { class: "hint" }, "None."),
       el("h4", {}, `Announcements · ${anns.length}`),
       anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => el("li", {}, a.text, tag(a.from)))) : el("p", { class: "hint" }, "None."),
-      win ? el("p", { class: "hint annfoot" }, `From the recording: ${win}. Read by Claude from the speech-to-text; check anything important.`) : null));
+      el("h4", {}, `Greetings from other churches · ${greetings.length}`),
+      greetings.length ? el("ul", { class: "anngreet" }, ...greetings.map(gLine)) : el("p", { class: "hint" }, "None."),
+      win ? el("p", { class: "hint annfoot" }, `From the recording: ${win}. Read by Claude from the speech-to-text; check anything important.`) : null,
+      commEmail(row)));
   }
   screen(...kids);
+}
+
+// ------------------------------------------------------------------ the weekly email "Morris North Communication"
+// (Russ, 2026-11-22: "I will want to copy and paste or edit the Announcements, then figure out how to send the email as
+// mnorthacc@gmail.com ... I don't want to do PDFs any more ... allow to expand to see what the email would look like
+// with the information from Sunday"). Laid out like the PDFs (Oct 11 - Nov 15): title, date, greeting, Scripture
+// Readings (from the analysis), Food for Thought and Prayer Requests (to fill in), New Notes (the announcements),
+// greetings received, the month's collection, Lookaheads, Church Service Information, Minister Contact Information,
+// the year's collections. The standing parts come from stream_meta 'communication' (config\communication.json), so
+// no phone number or email address is in this public page. Edits stay in this browser (per date) until "Reset".
+const COMM_FONT = "font-family: 'Times New Roman', Georgia, serif; font-size: 16px; color: #111; line-height: 1.35;";
+function commHtml(row) {
+  const T = state.comm || (demo ? DEMO_COMM : {});
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const d = parseYmd(row.service_date);
+  const longDate = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const runOf = (svc) => state.runs.find(r => r.run_key === `${row.service_date}_${svc}`);
+  const readings = (svc) => ((runOf(svc) || {}).summary || {}).readings || [];
+  const join = (a) => a.length < 2 ? (a[0] || "") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+  const H = (t) => `<p style="margin:14px 0 4px"><b><u>${t}</u></b></p>`;
+  const ul = (items) => items.length ? `<ul style="margin:0 0 0 0; padding-left:28px">${items.map(x => `<li style="margin:2px 0">${x}</li>`).join("")}</ul>` : "";
+  const both = row.combined || {};
+  const am = readings("SunAM"), pm = readings("SunPM");
+  const rd = [];
+  if (am.length) rd.push(`Our morning scripture reading was from ${esc(join(am))}.`);
+  if (pm.length) rd.push(`In the afternoon, we read from ${esc(join(pm))}.`);
+  const notes = (both.announcements || []).map(a => esc(a.text));
+  const greet = (both.greetings || []).map(g => g.church ? `${esc(g.church)}${g.place ? " (" + esc(g.place) + ")" : ""}` : esc(g.heard));
+  const coll = (T.collections || {})[String(d.getMonth() + 1)];
+  const blank = `<span style="color:#888">(add here)</span>`;
+  return `<div style="${COMM_FONT}">` +
+    `<p style="text-align:center; margin:0"><b>${esc(T.title || "MORRIS NORTH APOSTOLIC CHRISTIAN CHURCH COMMUNICATIONS")}</b></p>` +
+    `<p style="text-align:center; margin:6px 0 14px; font-size:20px"><b>${longDate}</b></p>` +
+    `<p style="margin:0"><b>${esc(T.opening || "Greetings in the name of Jesus!")}</b></p>` +
+    H("Scripture Readings:") + (rd.length ? ul(rd) : ul([blank])) +
+    H("Food for Thought:") + ul([blank]) +
+    H("Prayer Requests:") + ul([blank]) +
+    H("New Notes:") + ul(notes.length ? notes : [blank]) +
+    (greet.length ? H("Greetings were received from:") + ul(greet) : "") +
+    (coll ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${esc(coll)}</p>` : "") +
+    ((T.lookaheads || []).length ? H("Lookaheads") + ul(T.lookaheads) : "") +
+    ((T.churchInfo || []).length ? H("Church Service Information:") + ul(T.churchInfo) : "") +
+    ((T.ministers || []).length ? H("Minister Contact Information:") + ul(T.ministers.map(m => `${esc(m.name)}${ul(m.lines || [])}`)) : "") +
+    (Object.keys(T.collections || {}).length ? `<p style="margin:14px 0 4px"><u>Monthly <b>charity collections</b> are scheduled as follows:</u></p>` +
+      ul(Object.entries(T.collections).sort((a, b) => a[0] - b[0]).map(([m, w]) => `${new Date(2000, m - 1, 1).toLocaleDateString("en-US", { month: "long" })}: ${esc(w)}`)) : "") +
+    `</div>`;
+}
+const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building Fund" },
+  lookaheads: ["<b>Communion</b> at Morris North = April 10, 2027"],
+  churchInfo: ["Morris North Apostolic Christian Church address: <b>418 Birch Ave</b>, Morris, MN 56267"],
+  ministers: [{ name: "(the ministers' phone numbers and emails come from the template on the PC)", lines: [] }] };
+function commEmail(row) {
+  const key = row.service_date;
+  state.commOpen = state.commOpen || new Set();
+  state.commEdit = state.commEdit || new Set();
+  const saved = store.get("mail." + key, null);
+  const editing = state.commEdit.has(key);
+  const d = parseYmd(key);
+  const subject = String((state.comm || {}).subject || "Morris North Communication {date}").replace("{date}", `${d.getMonth() + 1}.${d.getDate()}.${String(d.getFullYear()).slice(2)}`);
+  const prev = el("div", { class: "mailprev", contenteditable: editing ? "true" : null });
+  prev.innerHTML = saved || commHtml(row);
+  prev.addEventListener("input", () => store.set("mail." + key, prev.innerHTML));
+  const msg = el("span", { class: "hint" }, saved ? "Your edits (kept in this browser)." : "Made from Sunday's recording.");
+  const copy = el("button", { class: "small", onclick: async () => {
+    const html = prev.innerHTML, text = prev.innerText;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
+    } catch {
+      const r = document.createRange(); r.selectNodeContents(prev); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand("copy"); s.removeAllRanges();
+    }
+    msg.textContent = "Copied. In Gmail: new message, paste into the body.";
+  } }, "Copy email");
+  const edit = el("button", { class: "small" + (editing ? " on" : ""), onclick: () => { if (editing) state.commEdit.delete(key); else state.commEdit.add(key); render(); } }, editing ? "Done editing" : "Edit");
+  const reset = saved ? el("button", { class: "small", onclick: () => { store.set("mail." + key, null); render(); } }, "Reset") : null;
+  // Gmail's compose window in the mnorthacc@gmail.com account (it must be signed in in this browser); the body is pasted
+  const gmail = el("a", { class: "small btnlink", target: "_blank", rel: "noopener",
+    href: `https://mail.google.com/mail/?authuser=mnorthacc@gmail.com&view=cm&fs=1&su=${encodeURIComponent(subject)}` }, "Open Gmail (mnorthacc)");
+  const det = el("details", { class: "annmail", open: state.commOpen.has(key) ? "" : null },
+    el("summary", {}, "Email: ", el("b", {}, subject)),
+    el("div", { class: "mailbar" }, copy, edit, reset, gmail, msg),
+    prev);
+  det.addEventListener("toggle", () => { if (det.open) state.commOpen.add(key); else state.commOpen.delete(key); });
+  return det;
 }
 function demoAnn() {
   return [{ service_date: "2026-11-15", updated_at: new Date().toISOString(),
@@ -1821,7 +1913,9 @@ async function refresh() {
     if (statsTab && (!state.sermons || Date.now() - state.statsAt > 10 * 60e3)) { await loadStats(); if (state.crEdit === null) render(); }
     if (state.tab === "announcements" && (!state.ann || Date.now() - state.annAt > 5 * 60e3)) await loadAnn();
     // do not redraw under an open confirmation, a form being filled in, the admin list or the stats being looked at
-    if (!state.asking && state.tab !== "admin" && !statsTab && !(document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName))) render();
+    // ... nor while the weekly email is being edited (Announcements tab)
+    const typing = document.activeElement && (["INPUT", "SELECT"].includes(document.activeElement.tagName) || document.activeElement.isContentEditable);
+    if (!state.asking && state.tab !== "admin" && !statsTab && !typing && !(state.tab === "announcements" && state.commEdit && state.commEdit.size)) render();
     else { setPc(); renderTabs(); }
   } catch (e) { screen(el("section", { class: "card" }, "Could not load the status: " + (e.message || e))); }
   state.timer = setTimeout(refresh, anyActive() ? 5000 : 20000);
