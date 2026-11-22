@@ -1053,7 +1053,11 @@ function commHtml(row) {
     ((T.churchInfo || []).length ? H("Church Service Information:") + ul(T.churchInfo) : "") +
     ((T.ministers || []).length ? H("Minister Contact Information:") + ul(T.ministers.map(m => `${esc(m.name)}${ul(m.lines || [])}`)) : "") +
     (Object.keys(T.collections || {}).length ? `<p style="margin:14px 0 4px"><u>Monthly <b>charity collections</b> are scheduled as follows:</u></p>` +
-      ul(Object.entries(T.collections).sort((a, b) => a[0] - b[0]).map(([m, w]) => `${new Date(2000, m - 1, 1).toLocaleDateString("en-US", { month: "long" })}: ${esc(w)}`)) : "") +
+      // this month's line bold (Russ, 2026-11-22: "Bold the month November: ACCFS")
+      ul(Object.entries(T.collections).sort((a, b) => a[0] - b[0]).map(([m, w]) => {
+        const line = `${new Date(2000, m - 1, 1).toLocaleDateString("en-US", { month: "long" })}: ${esc(w)}`;
+        return Number(m) === d.getMonth() + 1 ? `<b>${line}</b>` : line;
+      })) : "") +
     `</div>`;
 }
 const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building Fund" },
@@ -1083,9 +1087,18 @@ function commEmail(row) {
   } }, "Copy email");
   const edit = el("button", { class: "small" + (editing ? " on" : ""), onclick: () => { if (editing) state.commEdit.delete(key); else state.commEdit.add(key); render(); } }, editing ? "Done editing" : "Edit");
   const reset = saved ? el("button", { class: "small", onclick: () => { store.set("mail." + key, null); render(); } }, "Reset") : null;
-  // Gmail's compose window in the mnorthacc@gmail.com account (it must be signed in in this browser); the body is pasted
-  const gmail = el("a", { class: "small btnlink", target: "_blank", rel: "noopener",
-    href: `https://mail.google.com/mail/?authuser=mnorthacc@gmail.com&view=cm&fs=1&su=${encodeURIComponent(subject)}` }, "Open Gmail (mnorthacc)");
+  // Gmail's compose window in the mnorthacc@gmail.com account (it must be signed in in this browser). A Gmail link can
+  // carry only the subject and plain text, so the formatted email is copied first (synchronously, inside the click, so
+  // the browser allows both) and pasted into the body with Ctrl+V (Russ, 2026-11-22: "Can I click Open Gmail and it
+  // opens with it filled in?").
+  const gmail = el("button", { class: "small", onclick: () => {
+    const r = document.createRange(); r.selectNodeContents(prev); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    let ok = false; try { ok = document.execCommand("copy"); } catch {}
+    s.removeAllRanges();
+    window.open(`https://mail.google.com/mail/?authuser=mnorthacc@gmail.com&view=cm&fs=1&su=${encodeURIComponent(subject)}`, "_blank", "noopener");
+    msg.textContent = ok ? "Email copied. In Gmail click in the message body and press Ctrl+V, then add the recipients."
+                         : "Gmail opened; use Copy email, then paste into the message body.";
+  } }, "Open Gmail (mnorthacc)");
   const det = el("details", { class: "annmail", open: state.commOpen.has(key) ? "" : null },
     el("summary", {}, "Email: ", el("b", {}, subject)),
     el("div", { class: "mailbar" }, copy, edit, reset, gmail, msg),
