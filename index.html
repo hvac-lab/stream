@@ -1337,7 +1337,9 @@ function commHtml(row) {
   const am = readings("SunAM"), pm = readings("SunPM");
   const rd = [];
   // book and chapter bold, the verses plain: "<b>Genesis 7</b>:1-24" (Russ, 2026-11-22: "Bold the book and chapter")
-  const boldRef = (r) => { const m = String(r).match(/^(.+?\s\d+)(:.*)?$/); return m ? `<b>${esc(m[1])}</b>${esc(m[2] || "")}` : esc(r); };
+  // only the book bold, chapter and verses plain: "<b>Leviticus</b> 21:1-24" (Russ, 2026-11-22: "Don't bold the
+  // chaper Leviticus 21"; before that the chapter was bold too)
+  const boldRef = (r) => { const m = String(r).match(/^(.*\D)\s(\d+)(:.*)?$/); return m ? `<b>${esc(m[1])}</b> ${esc(m[2])}${esc(m[3] || "")}` : esc(r); };
   const joinB = (a) => a.length < 2 ? (a[0] ? boldRef(a[0]) : "") : a.slice(0, -1).map(boldRef).join(", ") + " and " + boldRef(a[a.length - 1]);
   if (am.length) rd.push(`Our morning scripture reading was from ${joinB(am)}.`);
   if (pm.length) rd.push(`In the afternoon, we read from ${joinB(pm)}.`);
