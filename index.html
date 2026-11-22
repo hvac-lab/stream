@@ -1093,11 +1093,15 @@ function calendarPicture(T, d) {
     mg.font = fontAt(raw, baseOf(raw));
     for (const w of raw.split(/\s+/)) { const t = line ? line + " " + w : w; if (mg.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
     if (line) out.push(line);
-    return out.map(l => { let px = baseOf(raw); mg.font = fontAt(raw, px); while (mg.measureText(l).width > maxW && px > 9) { px -= 0.5; mg.font = fontAt(raw, px); } return [raw, l, px]; });
+    return out.map((l, j) => { let px = baseOf(raw); mg.font = fontAt(raw, px); while (mg.measureText(l).width > maxW && px > 9) { px -= 0.5; mg.font = fontAt(raw, px); } return [raw, l, px, j === 0]; });
   });
+  // a small gap between two items of the same day (Russ, 2026-11-22: "Put a new line between multiple items on the
+  // same day"), so a wrapped "Brookings Church 7:00" and "Morris North Church 7:30" read as two
+  const itemGap = 8;
+  const cellH = (lines) => lines.length * lineH + Math.max(0, lines.filter(x => x[3]).length - 1) * itemGap;
   const rowHs = (m, ent) => Array.from({ length: rowsOf(m) }, (_, r) => {
-    let most = 0; for (let i = 0; i < 7; i++) most = Math.max(most, cellLines(ent, r * 7 + i - m.getDay() + 1).length);
-    return Math.max(minRow, 34 + most * lineH);
+    let most = 0; for (let i = 0; i < 7; i++) most = Math.max(most, cellH(cellLines(ent, r * 7 + i - m.getDay() + 1)));
+    return Math.max(minRow, 34 + most);
   });
   const draw = (m, ent) => {
     const hs = rowHs(m, ent), H = top + head + wk + hs.reduce((a, b) => a + b, 0) + 2;
@@ -1126,7 +1130,10 @@ function calendarPicture(T, d) {
         if (day < 1 || day > n) continue;
         g.fillStyle = "#111"; g.textAlign = "left"; g.font = "bold 18px Arial, sans-serif"; g.fillText(String(day), x + 5, y + 20);
         let ly = y + 37;
-        for (const [raw, l, px] of cellLines(ent, day)) {
+        let firstItem = true;
+        for (const [raw, l, px, starts] of cellLines(ent, day)) {
+          if (starts && !firstItem) ly += itemGap;
+          if (starts) firstItem = false;
           g.font = fontAt(raw, px); g.fillStyle = lunch(raw) ? "#444" : "#111";
           g.fillText(l, x + 4, ly); ly += lineH;
         }
@@ -1197,7 +1204,9 @@ function commHtml(row) {
     const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i);
     // no lunch assignments here (Russ, 2026-11-22: "Do not include coming up lunch items"); they stay in the picture
     const lines = ((calMonths[`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`] || {})[String(t.getDate())] || []).filter(l => !/^lunch/i.test(l));
-    if (lines.length) soon.push(`<b>${t.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> – ${lines.map(esc).join("; ")}`);
+    // each item of the day on its own line under the date (Russ, 2026-11-22)
+    if (lines.length) soon.push(`<b>${t.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b>` +
+      (lines.length === 1 ? ` – ${esc(lines[0])}` : lines.map(l => `<br>${esc(l)}`).join("")));
   }
   const comingUp = soon.length ? H("Coming up:") + ul(soon) : "";
   return `<div style="${COMM_FONT}">` +
