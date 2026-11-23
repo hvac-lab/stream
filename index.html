@@ -1069,7 +1069,11 @@ function churchMapNode(churches, counts) {
     // Texas. Leave the one below AZ"), west to east, so the map does not grow down to Acapulco
     const farSouth = churches.filter(c => c.lat != null && c.lat < 24 && near(c)).sort((a, b) => a.lon - b.lon);
     const southRow = new Map(farSouth.map((c, i) => [c.name, [-100.6 + 1.5 * i, 24.6]]));
-    const where = (c) => proj([c.lon, c.lat]) || (near(c) ? projOut(southRow.get(c.name) || [c.lon, c.lat]) : null);
+    // the churches in Japan (east of 100° E) in a row in the white space south of California (Russ, 2026-11-22)
+    const asia = churches.filter(c => c.lat != null && c.lon > 100).sort((a, b) => a.lon - b.lon);
+    const westRow = new Map(asia.map((c, i) => [c.name, [-117.9 + 1.5 * i, 30.9]]));
+    const where = (c) => westRow.has(c.name) ? projOut(westRow.get(c.name))
+      : proj([c.lon, c.lat]) || (near(c) ? projOut(southRow.get(c.name) || [c.lon, c.lat]) : null);
     let [[x0, y0], [x1, y1]] = path.bounds(lower48); const pad = 12;
     for (const c of churches) { if (c.lat == null) continue; const p = where(c); if (p) { x0 = Math.min(x0, p[0] - 10); x1 = Math.max(x1, p[0] + 10); y0 = Math.min(y0, p[1] - 10); y1 = Math.max(y1, p[1] + 10); } }
     const vb = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
