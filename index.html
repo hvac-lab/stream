@@ -262,6 +262,7 @@
   /* Greetings by day: one compact table, churches in a grid of small cells (Russ, 2026-11-22) */
   table.data.gdays { font-size: 13px; } table.data.gdays td { vertical-align: top; padding-top: 5px; padding-bottom: 5px; }
   table.data.gdays td.gdate { white-space: nowrap; width: 1%; } table.data.gdays td.nc, table.data.gdays th.nc { width: 1%; padding-right: 12px; }
+  table.data tfoot td { border-top: 1px solid var(--border); }
   .gcells { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 1px 12px; } .gcells span { overflow-wrap: anywhere; line-height: 1.35; }
   .gcells .gunk { color: var(--muted); font-style: italic; }
   .gmaphead { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 10px; } .gmaphead h3 { margin: 0; flex: 1 1 auto; }
@@ -1261,9 +1262,14 @@ function renderGreetings() {
   const where = (name) => { const c = churchList.find(x => x.name === name); return c ? [c.town, c.state].filter(Boolean).join(", ") : place.get(name) || ""; };
   const rows = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const total = rows.reduce((s, r) => s + r[1], 0);
-  const tbl = el("table", { class: "data" }, el("tr", {}, el("th", {}, "Church"), el("th", {}, "Place"), el("th", { class: "nc" }, "Greetings"), el("th", { class: "nc" }, "Last")),
-    ...rows.map(([n, k]) => el("tr", {}, el("td", {}, n), el("td", {}, where(n)), el("td", { class: "nc" }, String(k)), el("td", { class: "nc" }, fmtDate(parseYmd(last.get(n)))))),
-    el("tr", {}, el("td", {}, el("b", {}, "Total")), el("td", {}, `${rows.length} church${rows.length === 1 ? "" : "es"}`), el("td", { class: "nc" }, el("b", {}, String(total))), el("td", {})));
+  // sortable headings, as on the other tabs (Russ, 2026-11-22: "make headings sortable, including Greetings by church")
+  const tbl = sortTable("greetchurch", [
+    { key: "church", label: "Church", val: r => r.n.toLowerCase(), cell: r => r.n },
+    { key: "place", label: "Place", val: r => r.place.toLowerCase(), cell: r => r.place },
+    { key: "k", label: "Greetings", val: r => r.k, num: true },
+    { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(parseYmd(r.last)), num: true },
+  ], rows.map(([n, k], i) => ({ n, k, place: where(n), last: last.get(n) || "", _tie: i })), { key: "k", dir: "desc" }, 1000,
+    { foot: el("tr", {}, el("td", {}, el("b", {}, "Total")), el("td", {}, `${rows.length} church${rows.length === 1 ? "" : "es"}`), el("td", { class: "nc" }, el("b", {}, String(total))), el("td", {})) });
   const tallyCard = el("section", { class: "card" }, el("h3", {}, "Greetings by church"),
     rows.length ? tbl : el("p", { class: "hint" }, "No greetings in this time frame."),
     el("p", { class: "hint", style: "margin:8px 0 0" }, `${services} service day${services === 1 ? "" : "s"} in the time frame; a church greeting at the morning and the afternoon service counts 1.`,
@@ -1292,14 +1298,13 @@ function renderGreetings() {
   // smaller"): date, how many churches, then the churches in a grid of small cells
   if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No services yet.")));
   else kids.push(el("section", { class: "card" }, el("h3", {}, "Greetings by day"),
-    el("div", { class: "tablewrap" }, el("table", { class: "data gdays" },
-      el("thead", {}, el("tr", {}, el("th", {}, "Date"), el("th", { class: "nc" }, "#"), el("th", {}, "Churches"))),
-      el("tbody", {}, ...state.ann.map(row => {
-        const gs = (row.combined || {}).greetings || [];
-        return el("tr", {}, el("td", { class: "gdate" }, fmtDate(parseYmd(row.service_date))), el("td", { class: "nc" }, String(gs.length)),
-          el("td", {}, gs.length ? el("div", { class: "gcells" }, ...gs.map(g => g.church ? el("span", {}, greetName(g))
-            : el("span", { class: "gunk", title: "not on the church list" }, `“${g.heard || "?"}”`))) : el("span", { class: "hint" }, "None")));
-      }))))));
+    sortTable("greetday", [
+      { key: "date", label: "Date", val: r => r.d, cell: r => fmtDate(parseYmd(r.d)), cls: "gdate" },
+      { key: "n", label: "#", val: r => r.gs.length, num: true },
+      { key: "churches", label: "Churches", val: r => r.gs.map(g => g.church ? greetName(g) : g.heard || "").join(", ").toLowerCase(),
+        cell: r => r.gs.length ? el("div", { class: "gcells" }, ...r.gs.map(g => g.church ? el("span", {}, greetName(g))
+          : el("span", { class: "gunk", title: "not on the church list" }, `“${g.heard || "?"}”`))) : el("span", { class: "hint" }, "None") },
+    ], state.ann.map(row => ({ d: String(row.service_date).slice(0, 10), gs: (row.combined || {}).greetings || [] })), { key: "date", dir: "desc" }, 1000, { tableCls: "gdays" })));
   screen(...kids);
 }
 // ------------------------------------------------------------------ Thoughts (Russ, 2026-11-22: "create a quiz and deep
@@ -2175,7 +2180,9 @@ function sortTable(id, cols, rows, def, limit = 25, opts = {}) {
     title: "Sort by " + c.label.toLowerCase(),
     onclick: () => { state.sorts[id] = { key: c.key, dir: c.key === col.key ? (st.dir === "desc" ? "asc" : "desc") : (c.num ? "desc" : "asc") }; store.set("sorts2", state.sorts); render(); } }, c.head || c.label)));
   const body = el("tbody", {}, ...shown.map(r => el("tr", { class: (opts.rowCls && opts.rowCls(r)) || null }, ...cols.map(c => el("td", { class: [c.num ? "nc" : "", c.cls || "", c.nowrap ? (c.nowrap === "wide" ? "nowrap-wide" : "nowrap") : ""].join(" ").trim() || null }, c.cell ? c.cell(r) : String(c.val(r) ?? ""))))));
-  const box = el("div", {}, el("div", { class: "tablewrap" + (opts.sticky ? " sticky" : "") }, el("table", { class: "data" }, el("thead", {}, head), body)));
+  // opts.foot: a row under the sorted rows (a total); opts.tableCls: more classes on the table
+  const box = el("div", {}, el("div", { class: "tablewrap" + (opts.sticky ? " sticky" : "") }, el("table", { class: "data" + (opts.tableCls ? " " + opts.tableCls : "") },
+    el("thead", {}, head), body, opts.foot ? el("tfoot", {}, opts.foot) : null)));
   if (sorted.length > limit) box.append(el("button", { class: "small more", onclick: () => { if (all) state.showAll.delete(id); else state.showAll.add(id); render(); } },
     all ? "Show fewer" : `Show all ${sorted.length}`));
   return box;
