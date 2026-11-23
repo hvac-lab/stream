@@ -1264,12 +1264,13 @@ function renderGreetings() {
   const total = rows.reduce((s, r) => s + r[1], 0);
   // sortable headings, as on the other tabs (Russ, 2026-11-22: "make headings sortable, including Greetings by church")
   const tbl = sortTable("greetchurch", [
-    { key: "church", label: "Church", val: r => r.n.toLowerCase(), cell: r => r.n },
-    { key: "place", label: "Place", val: r => r.place.toLowerCase(), cell: r => r.place },
+    // one column "Church" showing the place ("Morris, MN"), the church name only when no place is known (Russ, 2026-11-22:
+    // "Remove church column, replace Place with Church")
+    { key: "place", label: "Church", val: r => (r.place || r.n).toLowerCase(), cell: r => r.place || r.n },
     { key: "k", label: "Greetings", val: r => r.k, num: true },
     { key: "last", label: "Last", val: r => r.last, cell: r => fmtDate(parseYmd(r.last)), num: true },
   ], rows.map(([n, k], i) => ({ n, k, place: where(n), last: last.get(n) || "", _tie: i })), { key: "k", dir: "desc" }, 1000,
-    { foot: el("tr", {}, el("td", {}, el("b", {}, "Total")), el("td", {}, `${rows.length} church${rows.length === 1 ? "" : "es"}`), el("td", { class: "nc" }, el("b", {}, String(total))), el("td", {})) });
+    { foot: el("tr", {}, el("td", {}, el("b", {}, "Total"), ` · ${rows.length} church${rows.length === 1 ? "" : "es"}`), el("td", { class: "nc" }, el("b", {}, String(total))), el("td", {})) });
   const tallyCard = el("section", { class: "card" }, el("h3", {}, "Greetings by church"),
     rows.length ? tbl : el("p", { class: "hint" }, "No greetings in this time frame."),
     el("p", { class: "hint", style: "margin:8px 0 0" }, `${services} service day${services === 1 ? "" : "s"} in the time frame; a church greeting at the morning and the afternoon service counts 1.`,
