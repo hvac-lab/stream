@@ -1241,8 +1241,8 @@ function renderGreetings() {
   const mapCard = el("section", { class: "card" }, el("div", { class: "gmaphead" }, el("h3", {}, "Our churches"),
     // order (Russ, 2026-11-22): church locations (different churches greeting us in the frame), percent, greetings far right
     el("div", { class: "tiles gmaptiles" }, tile(rows.length, `church location${rows.length === 1 ? "" : "s"}`),
-      // "Churches" with "17 out of 97" under it (Russ, 2026-11-22)
-      tile(`${pct}%`, churchList.length ? el("span", {}, "Churches", el("br"), `${greeted} out of ${churchList.length}`) : "Churches"),
+      // just "17 out of 97" under the percent (Russ, 2026-11-22: "Remove Churches")
+      tile(`${pct}%`, churchList.length ? `${greeted} out of ${churchList.length}` : ""),
       tile(total, "church greetings"))));
   if (!churchList.length) mapCard.append(el("p", { class: "hint" }, "The church locations are not on the page yet."));
   else {
