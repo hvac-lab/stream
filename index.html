@@ -1043,7 +1043,7 @@ function sectionBox(row, field) {
 // Greetings tab (Russ, 2026-11-22: "Remove the Greetings from other churches ... from the announcements, put them in a
 // new tab for now"; then "Include Wed ... Create a table at the top of a tally of only the churches where greetings
 // were given. Time frame 2026, past 12 months, all time, custom. Under the table, show a map of the US of all churches,
-// the total greetings from each church, 0 is fine"). A greeting counts once per service (AM and PM = 2; a Wednesday 1).
+// the total greetings from each church, 0 is fine"). A church counts once per day (AM and PM = 1, Russ 2026-11-22; a Wednesday 1).
 // Church locations: stream_meta 'churches' (scripts\Update-ChurchMap.ps1). Map: d3 + us-atlas, loaded when shown.
 async function loadMapLibs() {
   const add = (src) => new Promise((ok, no) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.append(s); });
@@ -1211,9 +1211,11 @@ function renderGreetings() {
     const d = String(row.service_date).slice(0, 10);
     if (d < from || d > to) continue;
     services++;
+    const today = new Set();
     for (const g of (row.combined || {}).greetings || []) {
       if (!g.church) { unmatched++; continue; }
-      counts.set(g.church, (counts.get(g.church) || 0) + (g.from === "both" ? 2 : 1));
+      // once per day: the same church at the morning and the afternoon service counts 1 (Russ, 2026-11-22)
+      if (!today.has(g.church)) { today.add(g.church); counts.set(g.church, (counts.get(g.church) || 0) + 1); }
       if (!last.has(g.church) || d > last.get(g.church)) last.set(g.church, d);
       place.set(g.church, greetName(g).replace(/^[^,]*,\s*/, "") || "");
     }
@@ -1231,7 +1233,7 @@ function renderGreetings() {
     el("tr", {}, el("td", {}, el("b", {}, "Total")), el("td", {}, `${rows.length} church${rows.length === 1 ? "" : "es"}`), el("td", { class: "nc" }, el("b", {}, String(total))), el("td", {})));
   const tallyCard = el("section", { class: "card" }, el("h3", {}, "Greetings by church"),
     rows.length ? tbl : el("p", { class: "hint" }, "No greetings in this time frame."),
-    el("p", { class: "hint", style: "margin:8px 0 0" }, `${services} service day${services === 1 ? "" : "s"} in the time frame; a church greeting at the morning and the afternoon service counts 2.`,
+    el("p", { class: "hint", style: "margin:8px 0 0" }, `${services} service day${services === 1 ? "" : "s"} in the time frame; a church greeting at the morning and the afternoon service counts 1.`,
       unmatched ? ` ${unmatched} greeting${unmatched === 1 ? "" : "s"} not matched to a church (see the days below).` : ""));
   // the map: every church, its count in the frame (0 is fine)
   // two tiles right of the title (Russ, 2026-11-22): the church greetings in the time frame, and the share of our
