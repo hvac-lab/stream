@@ -1050,6 +1050,8 @@ async function loadMapLibs() {
   if (!window.d3) await add("https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js");
   if (!window.topojson) await add("https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js");
   if (!state.usStates) state.usStates = await (await fetch("https://cdn.jsdelivr.net/npm/us-atlas@3.0.1/states-albers-10m.json")).json();
+  // the world outlines, for the small Japan map (a failure only leaves Japan out)
+  if (state.world === undefined) { try { state.world = await (await fetch("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json")).json(); } catch { state.world = null; } }
 }
 function churchMapNode(churches, counts) {
   const key = JSON.stringify([churches.length, [...counts.entries()].sort()]);
@@ -1072,14 +1074,33 @@ function churchMapNode(churches, counts) {
     // Texas. Leave the one below AZ"), west to east, so the map does not grow down to Acapulco
     const farSouth = churches.filter(c => c.lat != null && c.lat < 24 && near(c)).sort((a, b) => a.lon - b.lon);
     const southRow = new Map(farSouth.map((c, i) => [c.name, [-100.6 + 1.5 * i, 24.6]]));
-    // the churches in Japan (east of 100° E) in a row in the white space south of California (Russ, 2026-11-22)
-    const asia = churches.filter(c => c.lat != null && c.lon > 100).sort((a, b) => a.lon - b.lon);
-    const westRow = new Map(asia.map((c, i) => [c.name, [-117.9 + 1.5 * i, 30.9]]));
-    const where = (c) => westRow.has(c.name) ? projOut(westRow.get(c.name))
-      : proj([c.lon, c.lat]) || (near(c) ? projOut(southRow.get(c.name) || [c.lon, c.lat]) : null);
+    const whereNA = (c) => proj([c.lon, c.lat]) || (near(c) ? projOut(southRow.get(c.name) || [c.lon, c.lat]) : null);
+    // the churches in Japan (east of 100° E): a small map of Japan, not to scale, in the white space south of
+    // California, inside the US frame (Russ, 2026-11-22: "put a map of japan and the churches on it south of CA, not to
+    // size, so that the current map of the US frame doesn't get any bigger")
+    const asia = new Set(churches.filter(c => c.lat != null && c.lon > 100).map(c => c.name));
     let [[x0, y0], [x1, y1]] = path.bounds(lower48); const pad = 12;
-    for (const c of churches) { if (c.lat == null) continue; const p = where(c); if (p) { x0 = Math.min(x0, p[0] - 10); x1 = Math.max(x1, p[0] + 10); y0 = Math.min(y0, p[1] - 10); y1 = Math.max(y1, p[1] + 10); } }
+    for (const c of churches) { if (c.lat == null || asia.has(c.name)) continue; const p = whereNA(c); if (p) { x0 = Math.min(x0, p[0] - 10); x1 = Math.max(x1, p[0] + 10); y0 = Math.min(y0, p[1] - 10); y1 = Math.max(y1, p[1] + 10); } }
     const vb = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
+    let jpProj = null; const inset = [];
+    const jpWorld = state.world && asia.size ? topojson.feature(state.world, state.world.objects.countries).features.find(f => String(f.id) === "392") : null;
+    if (jpWorld) {
+      // the four main islands (the Ryukyu chain south of 30° N left out so Japan fills the box)
+      const polys = (jpWorld.geometry.type === "MultiPolygon" ? jpWorld.geometry.coordinates : [jpWorld.geometry.coordinates]).filter(pl => d3.max(pl[0], q => q[1]) > 30.5);
+      const jp = { type: "Feature", geometry: { type: "MultiPolygon", coordinates: polys } };
+      // the box: below San Diego, left of the Magdalena (Sonora) dot, down to the bottom of the frame
+      const bx0 = vb[0] + 8, bx1 = Math.min(projOut([-111, 30.6])[0] - 18, bx0 + 200);
+      const by0 = projOut([-117.1, 32.55])[1] + 16, by1 = Math.min(vb[1] + vb[3] - 8, by0 + 220);
+      jpProj = d3.geoMercator().fitExtent([[bx0 + 8, by0 + 8], [bx1 - 8, by1 - 22]], jp);
+      const box = mk("rect", { x: bx0.toFixed(1), y: by0.toFixed(1), width: (bx1 - bx0).toFixed(1), height: (by1 - by0).toFixed(1), rx: 6, "vector-effect": "non-scaling-stroke" });
+      box.style.cssText = "fill:none;stroke:var(--muted);stroke-width:1;stroke-dasharray:4 3;opacity:.6";
+      const shape = mk("path", { d: d3.geoPath(jpProj)(jp), "vector-effect": "non-scaling-stroke" });
+      shape.style.cssText = "fill:var(--band);stroke:var(--muted);stroke-width:1";
+      const name = mk("text", { x: ((bx0 + bx1) / 2).toFixed(1), y: (by1 - 8).toFixed(1), "text-anchor": "middle" });
+      name.style.cssText = "fill:var(--muted);font:600 12px system-ui,sans-serif;pointer-events:none"; name.textContent = "Japan (not to scale)";
+      inset.push(box, shape, name);
+    }
+    const where = (c) => asia.has(c.name) ? (jpProj ? jpProj([c.lon, c.lat]) : null) : whereNA(c);
     const svg = mk("svg", { viewBox: vb.join(" "), role: "img", "aria-label": "Map of the churches and their greetings" });
     const zoomG = mk("g");
     const land = mk("path", { d: path(lower48) }); land.style.cssText = "fill:var(--band);stroke:none";
@@ -1087,7 +1108,7 @@ function churchMapNode(churches, counts) {
     borders.style.cssText = "fill:none;stroke:var(--muted);stroke-width:0.7;opacity:.6";
     const outline = mk("path", { d: path(topojson.mesh(us, us.objects.states, (a, b) => a === b && keep(a))), "vector-effect": "non-scaling-stroke" });
     outline.style.cssText = "fill:none;stroke:var(--muted);stroke-width:1";
-    zoomG.append(land, borders, outline);
+    zoomG.append(land, borders, outline, ...inset);
     const pts = churches.filter(c => c.lat != null).map(c => ({ c, n: counts.get(c.name) || 0, p: where(c) })).filter(x => x.p);
     pts.sort((a, b) => a.n - b.n);   // the bigger circles on top
     const info = el("p", { class: "hint gmapinfo" }, "Tap or click a circle for the church.");
