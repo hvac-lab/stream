@@ -269,7 +269,7 @@
   .vdetail { display: grid; gap: 6px; } .vtoggle { color: var(--muted); font-size: 11px; }
   .gcells { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 1px 12px; } .gcells span { overflow-wrap: anywhere; line-height: 1.35; }
   .gcells .gunk { color: var(--muted); font-style: italic; }
-  .gmaphead { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 10px; } .gmaphead h3 { margin: 0; flex: 1 1 auto; }
+  .gmaphead { display: flex; align-items: center; justify-content: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 10px; } .gmaphead h3 { margin: 0; flex: 1 1 auto; }
   .gmaphead .gmaptiles { margin: 0; grid-template-columns: repeat(3, minmax(0, 160px)); } .gmaphead .tile { padding: 8px 12px; } .gmaphead .tile b { font-size: 24px; }
   .gmap .gmapbar { margin: 0 0 6px; } .gmap .gmapinfo { margin: 6px 0 0; color: var(--ink-2); }
   .toolbar { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
@@ -1290,7 +1290,8 @@ function renderGreetings() {
   // churches that sent at least one
   const greeted = rows.filter(([n]) => !churchList.length || churchList.some(c => c.name === n)).length;
   const pct = churchList.length ? Math.round(100 * greeted / churchList.length) : 0;
-  const mapCard = el("section", { class: "card" }, el("div", { class: "gmaphead" }, el("h3", {}, "Our churches"),
+  // no "Our churches" heading; the cards centered (Russ, 2026-11-22)
+  const mapCard = el("section", { class: "card" }, el("div", { class: "gmaphead" },
     // order (Russ, 2026-11-22): church locations (different churches greeting us in the frame), percent, greetings far right
     el("div", { class: "tiles gmaptiles" }, tile(rows.length, `church location${rows.length === 1 ? "" : "s"}`),
       // just "17 out of 97" under the percent (Russ, 2026-11-22: "Remove Churches")
@@ -1355,41 +1356,39 @@ function renderThoughts() {
       .catch(e => { state.thLoading = false; screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); }); }
     return;
   }
+  // one table, a row per day (Russ, 2026-11-22: "make this more table format"): Date | Morning | Afternoon / evening |
+  // questions; a row opens to the questions (sortTable detail)
   state.thOpen = state.thOpen || new Set();
-  const kids = [];
-  if (!state.th.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No questions yet. They are written after the last service of each day.")));
-  for (const row of state.th) {
-    const d = String(row.service_date).slice(0, 10), open = state.thOpen.has(d);
-    // the readings per service: "AM: Genesis 7:1-24 · Acts 14:1-28"
-    const by = new Map();
-    for (const r of row.readings || []) { if (!by.has(r.service)) by.set(r.service, []); by.get(r.service).push(r.ref); }
-    const reads = [...by.entries()].map(([s, refs]) => el("div", { class: "threads" }, el("b", {}, `${s}: `), refs.join(" · ")));
-    const Q = row.questions || {};
-    const nq = TH_LEVELS.reduce((n, [k]) => n + (Q[k] || []).length, 0);
-    const toggle = el("button", { class: "small more", "aria-expanded": String(open), onclick: () => { open ? state.thOpen.delete(d) : state.thOpen.add(d); render(); } },
-      open ? "Hide the questions ▴" : `Show the ${nq} questions ▾`);
-    const card = el("section", { class: "card thcard" },
-      el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(d)))),
-      ...(reads.length ? reads : [el("p", { class: "hint" }, "No readings found.")]),
-      nq ? toggle : el("p", { class: "hint" }, "No questions for this day."));
-    if (open) {
-      for (const [k, title] of TH_LEVELS) {
-        const list = Q[k] || []; if (!list.length) continue;
-        card.append(el("h4", { class: "thlevel" }, title), el("ol", { class: "thq" }, ...list.map((q, i) => {
-          const id = `${d}|${k}|${i}`, shown = state.thAns && state.thAns.has(id);
-          const src = q.kind === "bible" ? q.ref : `${q.service || ""} sermon`.trim();
-          const more = k === "reflect"
-            ? el("div", { class: "thsrc" }, "From ", el("b", {}, src), `: “${q.quote}”`)
-            : shown ? el("div", { class: "thans" }, el("div", {}, el("b", {}, "Answer: "), q.a), el("div", { class: "thsrc" }, el("b", {}, src), `: “${q.quote}”`))
-              : el("button", { class: "small", onclick: () => { state.thAns = state.thAns || new Set(); state.thAns.add(id); render(); } }, "Show answer");
-          return el("li", {}, el("div", {}, q.q), more);
-        })));
-      }
-      card.append(el("p", { class: "hint", style: "margin:10px 0 0" }, "Only from the Bible chapters read (King James) and what the ministers said; each question shows where its answer is."));
+  if (!state.th.length) return screen(el("section", { class: "card" }, el("p", { class: "hint" }, "No questions yet. They are written after the last service of each day.")));
+  const refsOf = (row, which) => (row.readings || []).filter(r => which(r.service)).map(r => r.ref).join(" · ");
+  const nOf = (row) => TH_LEVELS.reduce((n, [k]) => n + ((row.questions || {})[k] || []).length, 0);
+  const questionsOf = (row) => {
+    const d = String(row.service_date).slice(0, 10), Q = row.questions || {}, box = el("div", { class: "thcard" });
+    if (!nOf(row)) return el("p", { class: "hint", style: "margin:0" }, "No questions for this day.");
+    for (const [k, title] of TH_LEVELS) {
+      const list = Q[k] || []; if (!list.length) continue;
+      box.append(el("h4", { class: "thlevel" }, title), el("ol", { class: "thq" }, ...list.map((q, i) => {
+        const id = `${d}|${k}|${i}`, shown = state.thAns && state.thAns.has(id);
+        const src = q.kind === "bible" ? q.ref : `${q.service || ""} sermon`.trim();
+        const more = k === "reflect"
+          ? el("div", { class: "thsrc" }, "From ", el("b", {}, src), `: “${q.quote}”`)
+          : shown ? el("div", { class: "thans" }, el("div", {}, el("b", {}, "Answer: "), q.a), el("div", { class: "thsrc" }, el("b", {}, src), `: “${q.quote}”`))
+            : el("button", { class: "small", onclick: (e) => { e.stopPropagation(); state.thAns = state.thAns || new Set(); state.thAns.add(id); render(); } }, "Show answer");
+        return el("li", {}, el("div", {}, q.q), more);
+      })));
     }
-    kids.push(card);
-  }
-  screen(...kids);
+    return box;
+  };
+  const rows = state.th.map(row => ({ row, d: String(row.service_date).slice(0, 10), am: refsOf(row, s => s === "AM"), pm: refsOf(row, s => s !== "AM"), n: nOf(row) }));
+  screen(el("section", { class: "card" }, el("h2", {}, `Thoughts · ${rows.length} days`),
+    sortTable("thoughts", [
+      { key: "date", label: "Date", val: r => r.d, cell: r => el("span", {}, el("span", { class: "vtoggle" }, state.thOpen.has(r.d) ? "▾ " : "▸ "), fmtDate(parseYmd(r.d))), nowrap: "wide" },
+      { key: "am", label: "Morning", val: r => r.am.toLowerCase(), cell: r => r.am || el("span", { class: "hint" }, "–"), tip: "What was read at the morning service (Sunday AM)." },
+      { key: "pm", label: "Afternoon / evening", head: "Afternoon / evening", val: r => r.pm.toLowerCase(), cell: r => r.pm || el("span", { class: "hint" }, "–"),
+        tip: "What was read at the Sunday afternoon or the Wednesday evening service." },
+      { key: "n", label: "Questions", val: r => r.n, num: true, cls: "ctr" },
+    ], rows, { key: "date", dir: "desc" }, 200, { detail: r => questionsOf(r.row), open: state.thOpen, keyOf: r => r.d, tableCls: "thtable", detailTip: "Click to see the questions" }),
+    el("p", { class: "hint", style: "margin:10px 0 0" }, "Click a day to see its questions. Only from the Bible chapters read (King James) and what the ministers said; each question shows where its answer is.")));
 }
 // "Calendar changes" (Russ, 2026-11-22: "add a text box for lunch swaps, up and coming events to add to calendar, etc.
 // Button to prepare allow the user to view and edit, then confirm which will add/change/delete from the calendar").
@@ -2255,7 +2254,7 @@ function sortTable(id, cols, rows, def, limit = 25, opts = {}) {
   const body = el("tbody", {}, ...shown.flatMap(r => {
     const k = opts.detail ? opts.keyOf(r) : null, isOpen = !!(opts.detail && opts.open.has(k));
     const tr = el("tr", { class: [(opts.rowCls && opts.rowCls(r)) || "", opts.detail ? "rowopen" + (isOpen ? " on" : "") : ""].join(" ").trim() || null,
-      title: opts.detail ? (isOpen ? "Click to close" : "Click to see the minister and the readings") : null,
+      title: opts.detail ? (isOpen ? "Click to close" : opts.detailTip || "Click to open") : null,
       onclick: opts.detail ? () => { if (isOpen) opts.open.delete(k); else opts.open.add(k); render(); } : null },
       ...cols.map(c => el("td", { class: [c.num ? "nc" : "", c.cls || "", c.nowrap ? (c.nowrap === "wide" ? "nowrap-wide" : "nowrap") : ""].join(" ").trim() || null }, c.cell ? c.cell(r) : String(c.val(r) ?? ""))));
     return isOpen ? [tr, el("tr", { class: "rowdetail" }, el("td", { colspan: String(cols.length) }, opts.detail(r)))] : [tr];
@@ -2696,7 +2695,7 @@ function renderViewers() {
         tip: "All the time everyone spent watching the video, added together (Vimeo's total view time). Three people watching one hour each = 3.0; ten people watching six minutes each = 1.0." },
       { key: "ah", label: "Audio listener-hours", head: "Audio hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col ctr", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1),
         tip: "The same for the radio stream (Radio Mast): for each clock hour of the service, the average number of listeners, added up. 2 on average from 10 to 11 and 3 from 11 to 12 = 5.0. Whole clock hours, so a little before or after the service counts too." },
-    ], rows, { key: "date", dir: "desc" }, 30, { sticky: true, detail: detailOf, open: state.viewOpen, keyOf: r => r.run_key }) : el("p", { class: "hint" }, "No services in this time frame."),
+    ], rows, { key: "date", dir: "desc" }, 30, { sticky: true, detail: detailOf, open: state.viewOpen, keyOf: r => r.run_key, detailTip: "Click to see the minister and the readings" }) : el("p", { class: "hint" }, "No services in this time frame."),
     rows.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`viewers-${from}-to-${to}.csv`,
       ["Date", "Service", "Video viewers (most at once)", "Audio listeners (most at once)", "Both", "Video plays", "Video hours watched", "Audio listener-hours", "Vimeo sessions"],
       [...rows].sort((a, b) => a.run_key < b.run_key ? -1 : 1).map(r => [String(r.service_date).slice(0, 10), svcName(r), r.video_peak ?? "", r.audio_peak ?? "", r.both,
