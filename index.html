@@ -1785,7 +1785,10 @@ function commHtml(row) {
     `<p style="margin:0"><b>${esc(T.opening || "Greetings in the name of Jesus!")}</b></p>` +
     H("Scripture Readings:") + (rd.length ? ul(rd) : ul([blank])) +
     // both from the boxes on the card (prayer requests carried from the week before by the PC)
-    H("Food for Thought:") + ul((Array.isArray(row.food) && row.food.length) ? row.food.map(p => linkNames(linkify(p), T.links)) : [blank]) +
+    // plus one really hard question from the Thoughts, answered from the Bible only, with just the verse to look up
+    // (Russ, 2026-11-22; Update-Thoughts.ps1 puts it in combined.quiz)
+    H("Food for Thought:") + ul([...((Array.isArray(row.food) && row.food.length) ? row.food.map(p => linkNames(linkify(p), T.links)) : [blank]),
+      ...(both.quiz && both.quiz.q ? [`<b>Question:</b> ${esc(both.quiz.q)}<br><b>Answer:</b> look it up in ${esc(both.quiz.ref)}`] : [])]) +
     H("Prayer Requests:") + ul((Array.isArray(row.prayers) && row.prayers.length) ? row.prayers.map(p => linkNames(esc(p), T.links)) : [blank]) +
     H("New Notes:") + ul(notes.length ? notes : [blank]) +
     comingUp + calImg +
@@ -1914,7 +1917,8 @@ function demoAnn() {
     { service_date: "2026-11-22", updated_at: new Date().toISOString(), pm: null,
       prayers: ["Pray for (a brother) on his recent hip surgery.", "Remember (a sister), who has a doctor appointment on Dec 3."], prayers_carried: true,
       am: { found: true, window: "11:15-11:18", greetings: [{ church: "Wolcott", place: "Wolcott, IN", heard: "Wolkert" }, { church: "", place: "", heard: "Principal of Brookings" }], announcements: [{ text: "Church Wednesday evening; singing begins at 7:15.", when: "Wednesday, 7:15 pm" }] },
-      combined: { complete: false, greetings: [{ church: "Wolcott", place: "Wolcott, IN", heard: "Wolkert", from: "AM" }, { church: "", place: "", heard: "Principal of Brookings", from: "AM" }], announcements: [{ text: "Church Wednesday evening; singing begins at 7:15.", when: "Wednesday, 7:15 pm", from: "AM" }] } },
+      combined: { complete: false, greetings: [{ church: "Wolcott", place: "Wolcott, IN", heard: "Wolkert", from: "AM" }, { church: "", place: "", heard: "Principal of Brookings", from: "AM" }], announcements: [{ text: "Church Wednesday evening; singing begins at 7:15.", when: "Wednesday, 7:15 pm", from: "AM" }],
+        quiz: { q: "Though a son of Aaron with a blemish could not offer at the altar, what was he still allowed to do?", ref: "Leviticus 21:22" } } },
   ].sort((a, b) => (a.service_date < b.service_date ? 1 : -1));
 }
 
