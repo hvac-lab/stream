@@ -1788,7 +1788,7 @@ function commHtml(row) {
     // plus one really hard question from the Thoughts, answered from the Bible only, with just the verse to look up
     // (Russ, 2026-11-22; Update-Thoughts.ps1 puts it in combined.quiz)
     H("Food for Thought:") + ul([...((Array.isArray(row.food) && row.food.length) ? row.food.map(p => linkNames(linkify(p), T.links)) : [blank]),
-      ...(both.quiz && both.quiz.q ? [`<b>Question:</b> ${esc(both.quiz.q)}<br><b>Answer:</b> look it up in ${esc(both.quiz.ref)}`] : [])]) +
+      ...(both.quiz && both.quiz.q ? [`<b>Question:</b> ${esc(both.quiz.q)}<br><b>Answer:</b> ${esc(both.quiz.ref)}`] : [])]) +
     H("Prayer Requests:") + ul((Array.isArray(row.prayers) && row.prayers.length) ? row.prayers.map(p => linkNames(esc(p), T.links)) : [blank]) +
     H("New Notes:") + ul(notes.length ? notes : [blank]) +
     comingUp + calImg +
