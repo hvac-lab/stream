@@ -263,6 +263,10 @@
   table.data.gdays { font-size: 13px; } table.data.gdays td { vertical-align: top; padding-top: 5px; padding-bottom: 5px; }
   table.data.gdays td.gdate { white-space: nowrap; width: 1%; } table.data.gdays td.nc, table.data.gdays th.nc { width: 1%; padding-right: 12px; }
   table.data tfoot td { border-top: 1px solid var(--border); }
+  /* rows that open (Viewers: minister / event / readings) */
+  table.data tr.rowopen { cursor: pointer; } table.data tr.rowopen:hover td { background: var(--band); } table.data tr.rowopen.on td { background: var(--band); }
+  table.data tr.rowdetail td { background: var(--band); padding: 4px 12px 10px 28px; font-size: 14px; white-space: normal; }
+  .vdetail { display: grid; gap: 6px; } .vtoggle { color: var(--muted); font-size: 11px; }
   .gcells { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 1px 12px; } .gcells span { overflow-wrap: anywhere; line-height: 1.35; }
   .gcells .gunk { color: var(--muted); font-style: italic; }
   .gmaphead { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 10px; } .gmaphead h3 { margin: 0; flex: 1 1 auto; }
@@ -2197,7 +2201,7 @@ async function fetchAll(table, cols, order) {
 async function loadStats() {
   if (demo) { await demoLoad(); state.statsAt = Date.now(); return; }
   const [s, h, r, v] = await Promise.all([
-    fetchAll("stream_sermons", "id,sermon_date,service,speaker,chapters", "sermon_date"),
+    fetchAll("stream_sermons", "id,sermon_date,service,speaker,chapters,readings,title", "sermon_date"),
     fetchAll("stream_hymns", "run_key,seq,sung_date,service_id,service_name,sung_time,number,hymnal,title,how,media", "sung_date"),
     fetchAll("stream_hymn_rights", "hymnal,number,title,status,ccli,note,updated_by,updated_at", "updated_at"),
     fetchAll("stream_viewers", "run_key,service_date,service_id,started_at,ended_at,sessions,video_peak,video_plays,video_seconds,audio_peak,audio_hours", "service_date"),
@@ -2247,7 +2251,15 @@ function sortTable(id, cols, rows, def, limit = 25, opts = {}) {
   const head = el("tr", {}, ...cols.map(c => el("th", { class: "sortable" + (c.num ? " nc" : "") + (c.cls ? " " + c.cls : "") + (c.head ? " wrap" : ""), "data-dir": c.key === col.key ? st.dir : null,
     title: c.tip ? `${c.tip}\n(Click to sort by ${c.label.toLowerCase()}.)` : "Sort by " + c.label.toLowerCase(),
     onclick: () => { state.sorts[id] = { key: c.key, dir: c.key === col.key ? (st.dir === "desc" ? "asc" : "desc") : (c.num ? "desc" : "asc") }; store.set("sorts2", state.sorts); render(); } }, c.head || c.label)));
-  const body = el("tbody", {}, ...shown.map(r => el("tr", { class: (opts.rowCls && opts.rowCls(r)) || null }, ...cols.map(c => el("td", { class: [c.num ? "nc" : "", c.cls || "", c.nowrap ? (c.nowrap === "wide" ? "nowrap-wide" : "nowrap") : ""].join(" ").trim() || null }, c.cell ? c.cell(r) : String(c.val(r) ?? ""))))));
+  // opts.detail(r) + opts.open (a Set) + opts.keyOf(r): a row opens on a click to show a line under it
+  const body = el("tbody", {}, ...shown.flatMap(r => {
+    const k = opts.detail ? opts.keyOf(r) : null, isOpen = !!(opts.detail && opts.open.has(k));
+    const tr = el("tr", { class: [(opts.rowCls && opts.rowCls(r)) || "", opts.detail ? "rowopen" + (isOpen ? " on" : "") : ""].join(" ").trim() || null,
+      title: opts.detail ? (isOpen ? "Click to close" : "Click to see the minister and the readings") : null,
+      onclick: opts.detail ? () => { if (isOpen) opts.open.delete(k); else opts.open.add(k); render(); } : null },
+      ...cols.map(c => el("td", { class: [c.num ? "nc" : "", c.cls || "", c.nowrap ? (c.nowrap === "wide" ? "nowrap-wide" : "nowrap") : ""].join(" ").trim() || null }, c.cell ? c.cell(r) : String(c.val(r) ?? ""))));
+    return isOpen ? [tr, el("tr", { class: "rowdetail" }, el("td", { colspan: String(cols.length) }, opts.detail(r)))] : [tr];
+  }));
   // opts.foot: a row under the sorted rows (a total); opts.tableCls: more classes on the table
   const box = el("div", {}, el("div", { class: "tablewrap" + (opts.sticky ? " sticky" : "") }, el("table", { class: "data" + (opts.tableCls ? " " + opts.tableCls : "") },
     el("thead", {}, head), body, opts.foot ? el("tfoot", {}, opts.foot) : null)));
@@ -2646,9 +2658,30 @@ function renderViewers() {
       : el("p", { class: "hint" }, "No services in this time frame.")));
 
   const hrs = (s) => s == null ? "" : (Math.round(s / 360) / 10).toFixed(1);
+  // a row opens to show the minister, the event (AC Central's title or a special service) and what was read (Russ,
+  // 2026-11-22: "Allow to expand to see the minister / event / what was read"), from AC Central's sermon list
+  state.viewOpen = state.viewOpen || new Set();
+  const SPECIAL = { SPECIAL_EVENT: "Special service", TOPICAL: "Topical sermon", FUNERAL: "Funeral", WEDDING: "Wedding" };
+  const sermonsOf = (r) => {
+    const d = String(r.service_date).slice(0, 10), day = (state.sermons || []).filter(s => String(s.sermon_date).slice(0, 10) === d);
+    const same = day.filter(s => s.service === r.service_id);
+    return same.length ? same : day.filter(s => !["SunAM", "SunPM", "WedPM"].includes(s.service));
+  };
+  const detailOf = (r) => {
+    const list = sermonsOf(r);
+    if (!list.length) return el("p", { class: "hint", style: "margin:0" }, "No sermon entry on AC Central for this service.");
+    return el("div", { class: "vdetail" }, ...list.map(s => {
+      const ev = [s.title && s.title.trim(), SPECIAL[s.service] || (["SunAM", "SunPM", "WedPM"].includes(s.service) ? "" : String(s.service || "").toLowerCase())].filter(Boolean).join(" · ");
+      const read = (s.readings && s.readings.trim()) || (s.chapters || []).join("; ");
+      return el("div", {}, el("div", {}, el("b", {}, "Minister: "), s.speaker || "not listed"),
+        ev ? el("div", {}, el("b", {}, "Event: "), ev) : null,
+        el("div", {}, el("b", {}, "Read: "), read || el("span", { class: "hint" }, "not listed")));
+    }));
+  };
   kids.push(el("section", { class: "card" }, el("h2", {}, `Services · ${rows.length}`),
     rows.length ? sortTable("viewers", [
-      { key: "date", label: "Date", val: r => r.run_key, cell: r => fmtShortDay(dateOnly(r.service_date)) + ", " + String(r.service_date).slice(0, 4), nowrap: "wide" },
+      { key: "date", label: "Date", val: r => r.run_key, cell: r => el("span", {}, el("span", { class: "vtoggle" }, state.viewOpen.has(r.run_key) ? "▾ " : "▸ "),
+        fmtShortDay(dateOnly(r.service_date)) + ", " + String(r.service_date).slice(0, 4)), nowrap: "wide" },
       { key: "svc", label: "Service", val: r => svcName(r), cell: r => svcName(r) },
       { key: "video", label: "Video", val: r => r.video_peak ?? -1, num: true, cls: "ctr", cell: r => r.video_peak == null ? el("span", { class: "hint", title: "No Vimeo stream for this service" }, "none") : String(r.video_peak),
         tip: "The most people watching the live video at the same moment (Vimeo)." },
@@ -2663,7 +2696,7 @@ function renderViewers() {
         tip: "All the time everyone spent watching the video, added together (Vimeo's total view time). Three people watching one hour each = 3.0; ten people watching six minutes each = 1.0." },
       { key: "ah", label: "Audio listener-hours", head: "Audio hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col ctr", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1),
         tip: "The same for the radio stream (Radio Mast): for each clock hour of the service, the average number of listeners, added up. 2 on average from 10 to 11 and 3 from 11 to 12 = 5.0. Whole clock hours, so a little before or after the service counts too." },
-    ], rows, { key: "date", dir: "desc" }, 30, { sticky: true }) : el("p", { class: "hint" }, "No services in this time frame."),
+    ], rows, { key: "date", dir: "desc" }, 30, { sticky: true, detail: detailOf, open: state.viewOpen, keyOf: r => r.run_key }) : el("p", { class: "hint" }, "No services in this time frame."),
     rows.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`viewers-${from}-to-${to}.csv`,
       ["Date", "Service", "Video viewers (most at once)", "Audio listeners (most at once)", "Both", "Video plays", "Video hours watched", "Audio listener-hours", "Vimeo sessions"],
       [...rows].sort((a, b) => a.run_key < b.run_key ? -1 : 1).map(r => [String(r.service_date).slice(0, 10), svcName(r), r.video_peak ?? "", r.audio_peak ?? "", r.both,
