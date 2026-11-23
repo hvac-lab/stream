@@ -1059,7 +1059,15 @@ function churchMapNode(churches, counts) {
     // the lower 48 only (Russ, 2026-11-22: "Remove Alaska and Hawaii"): FIPS 02 and 15 left out, the view fitted to the rest
     const keep = (g) => !["02", "15"].includes(String(g.id));
     const lower48 = { type: "FeatureCollection", features: topojson.feature(us, us.objects.states).features.filter(keep) };
-    const [[x0, y0], [x1, y1]] = path.bounds(lower48), pad = 12;
+    // churches in Canada and Mexico: a dot where they are, in the white space beside the US, no map drawn there (Russ,
+    // 2026-11-22: "without adding a canada map, can you place a dot on any locations where they are. Do the same for
+    // Mexico"). geoAlbers with the same scale / translate = the lower-48 part of geoAlbersUsa, so they line up.
+    const proj = d3.geoAlbersUsa().scale(1300).translate([487.5, 305]), projOut = d3.geoAlbers().scale(1300).translate([487.5, 305]);
+    const outside = new Set(["ON", "Ontario", "Michoacan", "Sonora", "Guerrero", "Mexico", "Canada"]);
+    const near = (c) => outside.has(c.state) || (!c.state && c.lat < 32 && c.lat > 14 && c.lon > -118 && c.lon < -86 && !proj([c.lon, c.lat]));
+    const where = (c) => proj([c.lon, c.lat]) || (near(c) ? projOut([c.lon, c.lat]) : null);
+    let [[x0, y0], [x1, y1]] = path.bounds(lower48); const pad = 12;
+    for (const c of churches) { if (c.lat == null) continue; const p = where(c); if (p) { x0 = Math.min(x0, p[0] - 10); x1 = Math.max(x1, p[0] + 10); y0 = Math.min(y0, p[1] - 10); y1 = Math.max(y1, p[1] + 10); } }
     const vb = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
     const svg = mk("svg", { viewBox: vb.join(" "), role: "img", "aria-label": "Map of the churches and their greetings" });
     const zoomG = mk("g");
@@ -1069,8 +1077,7 @@ function churchMapNode(churches, counts) {
     const outline = mk("path", { d: path(topojson.mesh(us, us.objects.states, (a, b) => a === b && keep(a))), "vector-effect": "non-scaling-stroke" });
     outline.style.cssText = "fill:none;stroke:var(--muted);stroke-width:1";
     zoomG.append(land, borders, outline);
-    const proj = d3.geoAlbersUsa().scale(1300).translate([487.5, 305]);
-    const pts = churches.filter(c => c.lat != null).map(c => ({ c, n: counts.get(c.name) || 0, p: proj([c.lon, c.lat]) })).filter(x => x.p);
+    const pts = churches.filter(c => c.lat != null).map(c => ({ c, n: counts.get(c.name) || 0, p: where(c) })).filter(x => x.p);
     pts.sort((a, b) => a.n - b.n);   // the bigger circles on top
     const info = el("p", { class: "hint gmapinfo" }, "Tap or click a circle for the church.");
     const marks = pts.map(({ c, n, p }) => {
@@ -1196,7 +1203,7 @@ function renderGreetings() {
   else {
     mapCard.append(churchMapNode(churchList, counts));
     const away = churchList.filter(c => c.lat == null);
-    if (away.length) mapCard.append(el("p", { class: "hint", style: "margin:4px 0 0" }, "Not on the map (outside the US or no address): ",
+    if (away.length) mapCard.append(el("p", { class: "hint", style: "margin:4px 0 0" }, "Not on the map (overseas or no address): ",
       away.map(c => `${c.name}${c.town || c.state ? " (" + [c.town, c.state].filter(Boolean).join(", ") + ")" : ""}: ${counts.get(c.name) || 0}`).join(" · ")));
   }
   kids.push(mapCard);
