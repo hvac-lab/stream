@@ -1372,8 +1372,10 @@ function renderThoughts() {
         const src = q.kind === "bible" ? q.ref : `${q.service || ""} sermon`.trim();
         const more = k === "reflect"
           ? el("div", { class: "thsrc" }, "From ", el("b", {}, src), `: “${q.quote}”`)
-          : shown ? el("div", { class: "thans" }, el("div", {}, el("b", {}, "Answer: "), q.a), el("div", { class: "thsrc" }, el("b", {}, src), `: “${q.quote}”`))
-            : el("button", { class: "small", onclick: (e) => { e.stopPropagation(); state.thAns = state.thAns || new Set(); state.thAns.add(id); render(); } }, "Show answer");
+          // the same button shows and hides the answer (Russ, 2026-11-22)
+          : el("div", {}, el("button", { class: "small", onclick: (e) => { e.stopPropagation(); state.thAns = state.thAns || new Set();
+                if (shown) state.thAns.delete(id); else state.thAns.add(id); render(); } }, shown ? "Hide answer" : "Show answer"),
+              shown ? el("div", { class: "thans" }, el("div", {}, el("b", {}, "Answer: "), q.a), el("div", { class: "thsrc" }, el("b", {}, src), `: “${q.quote}”`)) : null);
         return el("li", {}, el("div", {}, q.q), more);
       })));
     }
