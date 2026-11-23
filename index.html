@@ -373,7 +373,10 @@ const demo = params.get("demo") === "1";
 const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
 // Ministers, Hymns and Bible were the three pages of one Stats tab until 2026-11-10 (Russ)
-const TABS = [["now", "Now"], ["history", "History"], ["announcements", "Announcements"], ["greetings", "Greetings"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["thoughts", "Thoughts"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
+// order (Russ, 2026-11-22): Now, History, Ministers, Bible, Viewers, Hymns, Copyright, Greetings, Thoughts, Announcements,
+// Process Map, Tests, Admin
+const TABS = [["now", "Now"], ["history", "History"], ["ministers", "Ministers"], ["bible", "Bible"], ["viewers", "Viewers"], ["hymns", "Hymns"], ["copyright", "Copyright"],
+  ["greetings", "Greetings"], ["thoughts", "Thoughts"], ["announcements", "Announcements"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
 const STATS_TABS = { ministers: "minister", hymns: "hymn", bible: "readings" };
 // the "General" check box on the Admin tab: everything except Admin, Thoughts and Announcements (Russ, 2026-11-22)
 const GENERAL_TABS = ["now", "history", "greetings", "ministers", "hymns", "bible", "copyright", "viewers"];
