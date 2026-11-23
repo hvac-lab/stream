@@ -874,9 +874,33 @@ function liveDetails(L, V, ended) {
     const m = mins.find(x => x.name === s.name);
     if (m) m.sec += sec; else mins.push({ name: s.name, sec });
   }
-  // someone heard under 3 minutes in all did not preach (Russ, 2026-11-22: "Doug Moser - 1 min did announcements, so he
-  // would not be listed as a minister"): left out of the list
-  for (let i = mins.length - 1; i >= 0; i--) if (mins[i].sec < 180) mins.splice(i, 1);
+  // who preached (Russ, 2026-11-22: "Doug Moser - 1 min did announcements, so he would not be listed as a minister";
+  // "The 3rd minister to stand up and talk, should not be listed. And, it is possible for a minister to stand up at the
+  // beginning and do introductions, he would not be added either"): a minister counts only with one stretch of 3 minutes
+  // or more that reaches the first Bible reading or comes after it (introductions come before the reading; announcements
+  // and a short word are under 3 minutes); in the order they first preached, two at most. Minutes = all his time heard.
+  {
+    const hms2 = (t) => { const p = String(t).split(":").map(Number); return p[0] * 3600 + p[1] * 60 + (p[2] || 0); };
+    const readTimes = (L.readings || []).filter(r => r && r.time).map(r => hms2(r.time));
+    const firstRead = readTimes.length ? Math.min(...readTimes) : null;
+    const startOf = new Map(), long = [];
+    for (const s of L.speakers || []) {
+      if (!s.name || s.name === "UNKNOWN") continue;
+      const a = hms2(s.from), b = hms2(s.to) + 10;
+      if (b - a < 180) continue;                                  // under 3 minutes at a stretch
+      if (firstRead != null && b < firstRead - 60) continue;      // done before the reading: introductions
+      long.push([s.name, a]);
+    }
+    // after the closing hymn (the last hymn sung, after the first minister began) come the announcements: not preaching.
+    // A hymn in the middle of a sermon is not the closing one, so the LAST hymn is taken.
+    const firstStart = long.length ? Math.min(...long.map(x => x[1])) : null;
+    const hymnT = (L.hymns || []).filter(h => h && h.time).map(h => hms2(h.time)).filter(t => firstStart != null && t > firstStart + 300);
+    const closing = hymnT.length ? Math.max(...hymnT) : null;
+    for (const [n, a] of long) if ((closing == null || a < closing - 30) && !startOf.has(n)) startOf.set(n, a);
+    const keep = [...startOf.entries()].sort((x, y) => x[1] - y[1]).slice(0, 2).map(([n]) => n);
+    for (let i = mins.length - 1; i >= 0; i--) if (!keep.includes(mins[i].name)) mins.splice(i, 1);
+    mins.sort((x, y) => startOf.get(x.name) - startOf.get(y.name));
+  }
   // Bible readings (analyze\live.py, the after-service finder on the words spoken), each indented under the minister
   // whose voice was heard when it began (Russ, 2026-11-18); one nobody is matched to stays at the bottom left.
   const named = (L.speakers || []).filter(s => s.name && s.name !== "UNKNOWN");
