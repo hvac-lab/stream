@@ -259,6 +259,11 @@
   /* each day's churches in 3 columns, top to bottom then across (Russ, 2026-11-22); 2 on a narrow phone */
   ul.anngreet { columns: 3; column-gap: 24px; } ul.anngreet li { break-inside: avoid; }
   @media (max-width: 480px) { ul.anngreet { columns: 2; column-gap: 16px; } }
+  /* Greetings by day: one compact table, churches in a grid of small cells (Russ, 2026-11-22) */
+  table.data.gdays { font-size: 13px; } table.data.gdays td { vertical-align: top; padding-top: 5px; padding-bottom: 5px; }
+  table.data.gdays td.gdate { white-space: nowrap; width: 1%; } table.data.gdays td.nc, table.data.gdays th.nc { width: 1%; padding-right: 12px; }
+  .gcells { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 1px 12px; } .gcells span { overflow-wrap: anywhere; line-height: 1.35; }
+  .gcells .gunk { color: var(--muted); font-style: italic; }
   .gmaphead { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 10px; } .gmaphead h3 { margin: 0; flex: 1 1 auto; }
   .gmaphead .gmaptiles { margin: 0; grid-template-columns: repeat(3, minmax(0, 160px)); } .gmaphead .tile { padding: 8px 12px; } .gmaphead .tile b { font-size: 24px; }
   .gmap .gmapbar { margin: 0 0 6px; } .gmap .gmapinfo { margin: 6px 0 0; color: var(--ink-2); }
@@ -1283,14 +1288,18 @@ function renderGreetings() {
   }
   // the map first, then the table (Russ, 2026-11-22: "swap the map and greetings table")
   kids.push(mapCard, tallyCard);
+  // every service day in one compact table (Russ, 2026-11-22: "Make this more table like, the font will need to be
+  // smaller"): date, how many churches, then the churches in a grid of small cells
   if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No services yet.")));
-  for (const row of state.ann) {
-    const gs = (row.combined || {}).greetings || [];
-    kids.push(el("section", { class: "card ann" },
-      el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date))), el("span", { class: "hint" }, `${gs.length} church${gs.length === 1 ? "" : "es"}`)),
-      gs.length ? el("ul", { class: "anngreet" }, ...gs.map(g => g.church ? el("li", {}, greetName(g))
-        : el("li", {}, `“${g.heard || "?"}”`, el("span", { class: "hint" }, " not on the church list")))) : el("p", { class: "hint" }, "None.")));
-  }
+  else kids.push(el("section", { class: "card" }, el("h3", {}, "Greetings by day"),
+    el("div", { class: "tablewrap" }, el("table", { class: "data gdays" },
+      el("thead", {}, el("tr", {}, el("th", {}, "Date"), el("th", { class: "nc" }, "#"), el("th", {}, "Churches"))),
+      el("tbody", {}, ...state.ann.map(row => {
+        const gs = (row.combined || {}).greetings || [];
+        return el("tr", {}, el("td", { class: "gdate" }, fmtDate(parseYmd(row.service_date))), el("td", { class: "nc" }, String(gs.length)),
+          el("td", {}, gs.length ? el("div", { class: "gcells" }, ...gs.map(g => g.church ? el("span", {}, greetName(g))
+            : el("span", { class: "gunk", title: "not on the church list" }, `“${g.heard || "?"}”`))) : el("span", { class: "hint" }, "None")));
+      }))))));
   screen(...kids);
 }
 // ------------------------------------------------------------------ Thoughts (Russ, 2026-11-22: "create a quiz and deep
