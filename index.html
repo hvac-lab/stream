@@ -1631,7 +1631,11 @@ function calendarPicture(T, d) {
     if (cal[k]) months.push([m, Object.fromEntries(Object.entries(cal[k]).map(([day, ls]) => [day, ls.filter(keep)]))]);
   }
   if (!months.length) return null;
-  const key = JSON.stringify([months.map(([m, e]) => [m.getTime(), e, collOf(m)]), short]);
+  // the email's own week (its Sunday to the Saturday after) in a very light purple (Russ, 2026-11-22: "highlight the
+  // current week somehow, maybe in a very light purple"); a week across two months is shaded in both pictures
+  const wk0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()), wk1 = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 6);
+  const thisWeek = (m, day) => { const t = new Date(m.getFullYear(), m.getMonth(), day); return t >= wk0 && t <= wk1; };
+  const key = JSON.stringify([months.map(([m, e]) => [m.getTime(), e, collOf(m)]), short, wk0.getTime()]);
   if (calCache.has(key)) return calCache.get(key);
   // boxes 1 px narrower in all so the right-hand line falls inside the picture (Russ: "line missing on the right side")
   const S = 3, W = 640, cw = (W - 1) / 7, top = 20, head = 60, wk = 28, minRow = 86, lineH = 17;
@@ -1680,6 +1684,7 @@ function calendarPicture(T, d) {
     for (let r = 0; r < hs.length; r++) {
       for (let i = 0; i < 7; i++) {
         const x = i * cw, day = r * 7 + i - first + 1;
+        if (day >= 1 && day <= n && thisWeek(m, day)) { g.fillStyle = "#efe6fb"; g.fillRect(x + 0.5, y + 0.5, cw, hs[r]); }
         g.strokeRect(x + 0.5, y + 0.5, cw, hs[r]);
         if (day < 1 || day > n) continue;
         g.fillStyle = "#111"; g.textAlign = "left"; g.font = "bold 18px Arial, sans-serif"; g.fillText(String(day), x + 5, y + 20);
