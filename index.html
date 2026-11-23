@@ -874,6 +874,9 @@ function liveDetails(L, V, ended) {
     const m = mins.find(x => x.name === s.name);
     if (m) m.sec += sec; else mins.push({ name: s.name, sec });
   }
+  // someone heard under 3 minutes in all did not preach (Russ, 2026-11-22: "Doug Moser - 1 min did announcements, so he
+  // would not be listed as a minister"): left out of the list
+  for (let i = mins.length - 1; i >= 0; i--) if (mins[i].sec < 180) mins.splice(i, 1);
   // Bible readings (analyze\live.py, the after-service finder on the words spoken), each indented under the minister
   // whose voice was heard when it began (Russ, 2026-11-18); one nobody is matched to stays at the bottom left.
   const named = (L.speakers || []).filter(s => s.name && s.name !== "UNKNOWN");
