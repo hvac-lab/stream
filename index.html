@@ -240,6 +240,10 @@
   nav.subtabs button.on { color: var(--ink); font-weight: 650; border-bottom-color: var(--s1); }
   nav.subtabs.annsub { margin: 0 0 14px; }
   .gmap svg { width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: grab; }
+  /* Thoughts tab */
+  .thcard .threads { margin: 2px 0; } .thcard .more { margin-top: 8px; }
+  .thlevel { margin: 14px 0 4px; font-size: 15px; } ol.thq { margin: 0; padding-left: 22px; } ol.thq li { margin: 8px 0; }
+  ol.thq li > div:first-child { margin-bottom: 4px; } .thans { margin-top: 2px; } .thsrc { color: var(--muted); font-size: 13px; margin-top: 2px; }
   /* each day's churches in 3 columns, top to bottom then across (Russ, 2026-11-22); 2 on a narrow phone */
   ul.anngreet { columns: 3; column-gap: 24px; } ul.anngreet li { break-inside: avoid; }
   @media (max-width: 480px) { ul.anngreet { columns: 2; column-gap: 16px; } }
@@ -357,7 +361,7 @@ const demo = params.get("demo") === "1";
 const store = { get(k, d) { try { const v = localStorage.getItem("stream." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
                 set(k, v) { try { localStorage.setItem("stream." + k, JSON.stringify(v)); } catch {} } };
 // Ministers, Hymns and Bible were the three pages of one Stats tab until 2026-11-10 (Russ)
-const TABS = [["now", "Now"], ["history", "History"], ["announcements", "Announcements"], ["greetings", "Greetings"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
+const TABS = [["now", "Now"], ["history", "History"], ["announcements", "Announcements"], ["greetings", "Greetings"], ["ministers", "Ministers"], ["hymns", "Hymns"], ["bible", "Bible"], ["thoughts", "Thoughts"], ["copyright", "Copyright"], ["viewers", "Viewers"], ["map", "Process Map"], ["tests", "Tests"], ["admin", "Admin"]];
 const STATS_TABS = { ministers: "minister", hymns: "hymn", bible: "readings" };
 const DATA_TABS = [...Object.keys(STATS_TABS), "copyright", "viewers"];   // need loadStats()
 const oldTab = (t) => t === "stats" ? ({ hymn: "hymns", readings: "bible" }[store.get("statsView", "")] || "ministers") : t;
@@ -711,10 +715,12 @@ function renderTabs() {
   // table headers that stick while scrolling sit just below the sticky tab row (--navh = its height)
   if (!nav._navh && window.ResizeObserver) { nav._navh = new ResizeObserver(() => document.documentElement.style.setProperty("--navh", nav.offsetHeight + "px")); nav._navh.observe(nav); }
   const adminOnly = ["map", "tests", "admin"];   // Russ, 2026-11-09: Tests and Admin only for admins; Process Map too (2026-11-10)
-  if (!TABS.some(([k]) => k === state.tab) || (adminOnly.includes(state.tab) && !state.admin)) state.tab = "now";
+  // Thoughts only for people whose "Thoughts" box is checked on the Admin tab (Russ, 2026-11-22)
+  const hidden = (k) => (adminOnly.includes(k) && !state.admin) || (k === "thoughts" && !state.thoughts);
+  if (!TABS.some(([k]) => k === state.tab) || hidden(state.tab)) state.tab = "now";
   const testLive = state.tests.some(r => overall(r).cls === "running") || state.requests.some(q => q.status === "pending" || q.status === "running");
   for (const [k, label] of TABS) {
-    if (adminOnly.includes(k) && !state.admin) continue;
+    if (hidden(k)) continue;
     nav.append(el("button", { class: state.tab === k ? "on" : "", onclick: async () => { const stuck = tabsStuck(); state.tab = k; store.set("tab", k); state.asking = null; state.crEdit = null; render(); tabScroll(stuck);
         if (DATA_TABS.includes(k) && !state.sermons) { try { await loadStats(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } }
         if ((k === "announcements" || k === "greetings") && !state.ann) { try { await loadAnn(); render(); } catch (e) { screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); } } } },
@@ -730,6 +736,7 @@ function render() {
   if (state.tab === "viewers") return renderViewers();
   if (state.tab === "announcements") return renderAnnouncements();
   if (state.tab === "greetings") return renderGreetings();
+  if (state.tab === "thoughts") return renderThoughts();
   if (state.tab === "map") return renderProcessMap();
   if (state.tab === "tests") return renderTests();
   if (state.tab === "admin") return renderAdmin();
@@ -1262,6 +1269,79 @@ function renderGreetings() {
       el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(row.service_date))), el("span", { class: "hint" }, `${gs.length} church${gs.length === 1 ? "" : "es"}`)),
       gs.length ? el("ul", { class: "anngreet" }, ...gs.map(g => g.church ? el("li", {}, greetName(g))
         : el("li", {}, `“${g.heard || "?"}”`, el("span", { class: "hint" }, " not on the church list")))) : el("p", { class: "hint" }, "None.")));
+  }
+  screen(...kids);
+}
+// ------------------------------------------------------------------ Thoughts (Russ, 2026-11-22: "create a quiz and deep
+// thought on what was read and preached ... list date, what Books and chapters and verses read both am pm. Then, expand
+// to show the questions. Then 3 general easy questions ... Then 4 harder questions, then 2 really hard questions, then 2
+// self reflecting questions. Everything has to come from the bible or what the minister said"). stream_thoughts, one row
+// per service day, written by the church PC (scripts\Update-Thoughts.ps1 -> analyze\thoughts.py; every question's quote
+// checked against the King James text / the transcript). Only people with "Thoughts" checked on the Admin tab see it.
+const TH_LEVELS = [["easy", "Easy questions"], ["harder", "Harder questions"], ["hard", "Really hard questions"], ["reflect", "Self-reflection"]];
+async function loadThoughts() {
+  if (demo) { state.th = demoThoughts(); return; }
+  const { data, error } = await state.sb.from("stream_thoughts").select("service_date,readings,questions,updated_at").order("service_date", { ascending: false }).limit(200);
+  if (error) throw new Error(`stream_thoughts: ${error.message}`);
+  state.th = data || [];
+}
+function demoThoughts() {
+  const q = (q, a, kind, ref, service, quote) => ({ q, a, kind, ref, service, quote });
+  return [{ service_date: "2026-11-22", readings: [{ service: "AM", ref: "Genesis 7:1-24" }, { service: "AM", ref: "Acts 14:1-28" }, { service: "PM", ref: "Leviticus 21:1-24" }, { service: "PM", ref: "Galatians 1:1-10" }],
+    questions: {
+      easy: [q("How many days and nights did the rain fall upon the earth?", "Forty days and forty nights.", "bible", "Genesis 7:12", "", "And the rain was upon the earth forty days and forty nights."),
+             q("Whom did the people of Lystra call Jupiter?", "Barnabas.", "bible", "Acts 14:12", "", "And they called Barnabas, Jupiter; and Paul, Mercurius"),
+             q("Who shut Noah in the ark?", "The LORD.", "bible", "Genesis 7:16", "", "as God had commanded him: and the LORD shut him in.")],
+      harder: [q("How many cubits upward did the waters prevail?", "Fifteen cubits.", "bible", "Genesis 7:20", "", "Fifteen cubits upward did the waters prevail; and the mountains were covered."),
+               q("What new name did the minister suggest for the ark?", "The mercy ship.", "sermon", "", "AM", "it could be called like the mercy ship"),
+               q("If Paul yet pleased men, what would he not be?", "The servant of Christ.", "bible", "Galatians 1:10", "", "for if I yet pleased men, I should not be the servant of Christ."),
+               q("How long does the church in Turkey wait before baptizing new believers?", "About a year.", "sermon", "", "AM", "they actually wait upwards of about a year to baptize the new believers")],
+      hard: [q("Which gift of God, named by Paul at Lystra, did the minister tie back to Noah's day?", "Rain from heaven.", "sermon", "", "AM", "Do you think the people in Noah's time thought rain was a sign of God's mercy?"),
+             q("What did the minister say Peter called baptism?", "An appeal to our Savior for a clean conscience.", "sermon", "", "AM", "it's an appeal to our Savior for a clean conscience")],
+      reflect: [q("What is the next step of obedience God is asking of me today?", "", "sermon", "", "AM", "What is the next step of obedience as we write about Noah?"),
+                q("Where am I seeking to please men rather than serving Christ?", "", "sermon", "", "PM", "Seeking to please men, seeking to look good to man isn't what's pleasing")] } },
+    { service_date: "2026-11-18", readings: [{ service: "Wednesday", ref: "Mark 4:1-41" }, { service: "Wednesday", ref: "Hebrews 10:19-39" }], questions: { easy: [], harder: [], hard: [], reflect: [] } }];
+}
+function renderThoughts() {
+  if (!state.th) {
+    screen(el("section", { class: "card" }, el("p", { class: "hint" }, "Loading the questions…")));
+    if (!state.thLoading) { state.thLoading = true; loadThoughts().then(() => { state.thLoading = false; if (state.tab === "thoughts") render(); })
+      .catch(e => { state.thLoading = false; screen(el("section", { class: "card" }, "Could not load: " + (e.message || e))); }); }
+    return;
+  }
+  state.thOpen = state.thOpen || new Set();
+  const kids = [];
+  if (!state.th.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No questions yet. They are written after the last service of each day.")));
+  for (const row of state.th) {
+    const d = String(row.service_date).slice(0, 10), open = state.thOpen.has(d);
+    // the readings per service: "AM: Genesis 7:1-24 · Acts 14:1-28"
+    const by = new Map();
+    for (const r of row.readings || []) { if (!by.has(r.service)) by.set(r.service, []); by.get(r.service).push(r.ref); }
+    const reads = [...by.entries()].map(([s, refs]) => el("div", { class: "threads" }, el("b", {}, `${s}: `), refs.join(" · ")));
+    const Q = row.questions || {};
+    const nq = TH_LEVELS.reduce((n, [k]) => n + (Q[k] || []).length, 0);
+    const toggle = el("button", { class: "small more", "aria-expanded": String(open), onclick: () => { open ? state.thOpen.delete(d) : state.thOpen.add(d); render(); } },
+      open ? "Hide the questions ▴" : `Show the ${nq} questions ▾`);
+    const card = el("section", { class: "card thcard" },
+      el("div", { class: "annhead" }, el("h3", {}, fmtDate(parseYmd(d)))),
+      ...(reads.length ? reads : [el("p", { class: "hint" }, "No readings found.")]),
+      nq ? toggle : el("p", { class: "hint" }, "No questions for this day."));
+    if (open) {
+      for (const [k, title] of TH_LEVELS) {
+        const list = Q[k] || []; if (!list.length) continue;
+        card.append(el("h4", { class: "thlevel" }, title), el("ol", { class: "thq" }, ...list.map((q, i) => {
+          const id = `${d}|${k}|${i}`, shown = state.thAns && state.thAns.has(id);
+          const src = q.kind === "bible" ? q.ref : `${q.service || ""} sermon`.trim();
+          const more = k === "reflect"
+            ? el("div", { class: "thsrc" }, "From ", el("b", {}, src), `: “${q.quote}”`)
+            : shown ? el("div", { class: "thans" }, el("div", {}, el("b", {}, "Answer: "), q.a), el("div", { class: "thsrc" }, el("b", {}, src), `: “${q.quote}”`))
+              : el("button", { class: "small", onclick: () => { state.thAns = state.thAns || new Set(); state.thAns.add(id); render(); } }, "Show answer");
+          return el("li", {}, el("div", {}, q.q), more);
+        })));
+      }
+      card.append(el("p", { class: "hint", style: "margin:10px 0 0" }, "Only from the Bible chapters read (King James) and what the ministers said; each question shows where its answer is."));
+    }
+    kids.push(card);
   }
   screen(...kids);
 }
@@ -1909,6 +1989,7 @@ function renderProcessMap() {
       phase("After", "about 30 to 40 minutes, no one needed",
         step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns. Before the service the hymn numbers are looked up in the Tabernacle / Hymns of Zion book first, from the hymn right before the service (5 min before a minister is first heard) in Zion's Harp first; a hymnal named in the announcement wins.", ["Church PC only"]),
         step(null, "Announcements (Sundays)", "From the last minutes of the recording the PC sends only the words after the closing prayer to Claude, which lists the greetings from other churches (names and places from AC Central's church list) and the announcements. After the afternoon service the morning's and afternoon's are combined, each once, on the Announcements tab (with the weekly email, its calendar from the church Google Calendar, read every minute on Sunday afternoons, hourly otherwise); the greetings (Sundays and Wednesdays) on the Greetings tab, counted by church for a time frame, with a map of all our churches. Food for Thought is written by Claude after the afternoon service: one verse a minister used for his main point (King James text) and one sentence on that point; Prayer Requests are carried from the week before; both can be changed with Edit in the email. \"Create draft\" has the PC save the email as a Gmail draft in mnorthacc@gmail.com within a minute; a person adds the recipients and sends it. After the afternoon service, dated events in the announcements that are not on the church calendar yet are added to it automatically, and a phone text lists them (delete any that were misheard). After each Sunday service the PC also reads last week's sent email: its upcoming events go on the calendar and its prayer requests into this week's list (the announcements list itself stays what was said over the pulpit that day). \"Calendar changes\" on the tab's Changes sub tab: lunch swaps and coming events written in plain words; the PC lists the changes, a person checks and edits them and presses Confirm, then the PC changes the church calendar (repeating entries are changed in Google Calendar itself).", ["Claude API", "Google Calendar", "Gmail (mnorthacc)", "Announcements tab"]),
+        step(null, "Thoughts (questions on the day)", "After the last service of the day (Sunday afternoon, Wednesday evening) Claude writes 11 questions on what was read and preached: 3 easy, 4 harder, 2 really hard and 2 for self-reflection, only from the Bible chapters read (King James) and the ministers' own words. Every question carries the exact words its answer comes from; the PC checks them against the King James text and the transcript and drops any it cannot find. They show on the Thoughts tab, by date with the chapters read, only for people whose Thoughts box is checked on the Admin tab.", ["Claude API", "Thoughts tab"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
         step(9, "Video uploaded to Vimeo", "Uploads the trimmed video, unlisted, to the Morris North folder.", ["Vimeo"]),
         step(10, "Sermon entry on AC Central", "Adds the sermon: date, service, minister, readings, the audio file and the video link.", ["AC Central"]),
@@ -2485,7 +2566,7 @@ function renderViewers() {
 // ------------------------------------------------------------------ Admin (same as the HVAC page's Admin tab)
 async function loadUsers() {
   if (demo) return state.users;
-  const { data, error } = await state.sb.from("stream_allowed_users").select("email,note,is_admin,added_at,added_by").order("added_at");
+  const { data, error } = await state.sb.from("stream_allowed_users").select("*").order("added_at");   // with "thoughts" once _11.sql ran
   if (error) throw new Error(error.message);
   state.users = data || []; return state.users;
 }
@@ -2499,10 +2580,21 @@ async function refreshAdmin(note) {
   try {
     const rows = await loadUsers();
     box.replaceChildren(el("h2", {}, `Who may sign in · ${rows.length}`));
-    const t = el("table", { class: "admin" }, el("thead", {}, el("tr", {}, el("th", {}, "Email"), el("th", {}, "Name / note"), el("th", {}, "Admin"), el("th", {}, "Added"), el("th", { class: "by" }, "By"), el("th", {}, ""))));
+    // Thoughts: a check box per person, saved right away (Russ, 2026-11-22: "Add this as a check box under the users
+    // called Thoughts. If it is checked for the person, they can see the questions"); shown once _11.sql has run
+    const hasTh = !demo ? rows.some(u => "thoughts" in u) : true;
+    const t = el("table", { class: "admin" }, el("thead", {}, el("tr", {}, el("th", {}, "Email"), el("th", {}, "Name / note"), el("th", {}, "Admin"),
+      hasTh ? el("th", {}, "Thoughts") : null, el("th", {}, "Added"), el("th", { class: "by" }, "By"), el("th", {}, ""))));
     const b = el("tbody");
     for (const u of rows) {
       const self = u.email.toLowerCase() === me;
+      const thIn = el("input", { type: "checkbox", title: "May see the Thoughts tab (questions on what was read and preached)" }); thIn.checked = !!u.thoughts;
+      thIn.onchange = async () => { thIn.disabled = true;
+        try { await rpc("stream_admin_set_thoughts", { p_email: u.email, p_on: thIn.checked });
+          if (self) { state.thoughts = thIn.checked; renderTabs(); }
+          refreshAdmin(`${u.email}: Thoughts ${thIn.checked ? "on" : "off"}.`); }
+        catch (e) { refreshAdmin("Could not save: " + (e.message || e)); } };
+      const thCell = hasTh ? el("td", { class: "thchk" }, thIn) : null;
       const rm = el("button", { class: "small danger", title: self ? "You cannot remove yourself" : "Remove " + u.email }, "Remove");
       if (self) rm.disabled = true;
       const edit = el("button", { class: "small", title: "Change the name or the admin flag" }, "Edit");
@@ -2527,7 +2619,7 @@ async function refreshAdmin(note) {
         noteCell.replaceChildren(nameIn); admCell.replaceChildren(el("label", {}, admIn, " admin"));
         cell.replaceChildren(save, " ", cancel); nameIn.focus();
       };
-      b.append(el("tr", {}, el("td", { class: "email" }, u.email, self ? el("span", { class: "hint" }, " (you)") : null), noteCell, admCell,
+      b.append(el("tr", {}, el("td", { class: "email" }, u.email, self ? el("span", { class: "hint" }, " (you)") : null), noteCell, admCell, thCell,
         el("td", {}, u.added_at ? fmtShortDay(new Date(u.added_at)) : ""), el("td", { class: "email by" }, u.added_by || ""), cell));
     }
     t.append(b); box.append(el("div", { class: "tablewrap" }, t));
@@ -2691,8 +2783,8 @@ async function demoLoad() {
   state.viewers = Array.from({ length: 160 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - Math.floor(i / 2) * 7 - (i % 2 ? 0 : 3)); const sid = i % 2 ? ["SunAM", "SunPM"][Math.floor(i / 2) % 2] : "WedPM";
     return { run_key: `${ymd(d)}_${sid}`, service_date: ymd(d), service_id: sid, sessions: 1, video_peak: i % 23 === 5 ? null : 2 + (i * 7) % 5, video_plays: 6 + (i * 5) % 14, video_seconds: 2400 + (i * 977) % 9000,
       audio_peak: 2 + (i * 3) % 6, audio_hours: ((i * 13) % 60) / 10 }; });
-  state.users = [{ email: "russ.koehl@morrisnorth.org", note: "Russ", is_admin: true, added_at: "2026-11-09T15:00:00Z", added_by: "copied from the HVAC list" },
-                 { email: "someone@example.org", note: "Sound booth", is_admin: false, added_at: "2026-11-09T16:00:00Z", added_by: "russ.koehl@morrisnorth.org" }];
+  state.users = [{ email: "russ.koehl@morrisnorth.org", note: "Russ", is_admin: true, thoughts: true, added_at: "2026-11-09T15:00:00Z", added_by: "copied from the HVAC list" },
+                 { email: "someone@example.org", note: "Sound booth", is_admin: false, thoughts: false, added_at: "2026-11-09T16:00:00Z", added_by: "russ.koehl@morrisnorth.org" }];
   // a quick test plays itself, one step every 3 s
   state.demoTick = () => {
     // a stop request: the "PC" picks it up on one tick, the stop step is done on the next
@@ -2724,12 +2816,14 @@ function demoRpc(fn, a) {
   if (fn === "stream_admin_add_user") { const e = a.p_email.toLowerCase(); const u = state.users.find(x => x.email === e);
     if (u) { u.note = a.p_note || u.note; u.is_admin = !!a.p_admin; } else state.users.push({ email: e, note: a.p_note, is_admin: !!a.p_admin, added_at: new Date().toISOString(), added_by: "demo" }); return; }
   if (fn === "stream_set_hymn_rights") { return; }
+  if (fn === "stream_admin_set_thoughts") { const u = state.users.find(x => x.email === a.p_email); if (u) u.thoughts = !!a.p_on; return; }
   if (fn === "stream_admin_remove_user") { if (a.p_email === "russ.koehl@morrisnorth.org") throw new Error("You cannot remove yourself"); state.users = state.users.filter(x => x.email !== a.p_email); return; }
 }
 
 // ------------------------------------------------------------------ start
 async function boot() {
-  if (demo) { state.user = { email: "russ.koehl@morrisnorth.org" }; state.admin = params.get("admin") !== "0"; /* &admin=0: see the page as a non-admin */ $("#who").textContent = "demo"; await refresh(); return; }
+  if (demo) { state.user = { email: "russ.koehl@morrisnorth.org" }; state.admin = params.get("admin") !== "0"; /* &admin=0: see the page as a non-admin */
+    state.thoughts = params.get("thoughts") !== "0";   /* &thoughts=0: without the Thoughts box checked */ $("#who").textContent = "demo"; await refresh(); return; }
   const cfg = window.STREAM_CONFIG;
   if (!cfg || !window.supabase) { screen(el("div", { class: "center" }, el("h2", {}, "Configuration missing"), el("p", {}, "config.js or the Supabase library did not load."))); return; }
   state.sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);   // same defaults as the HVAC page
@@ -2741,10 +2835,12 @@ async function boot() {
     clearTimeout(state.timer);
     if (!state.user) { showLogin(); return; }
     const me = String(state.user.email || "").toLowerCase();
-    const { data, error } = await state.sb.from("stream_allowed_users").select("email,is_admin");
+    // "*": works before and after supabase\stream_status_11.sql adds the thoughts column
+    const { data, error } = await state.sb.from("stream_allowed_users").select("*");
     const mine = !error && (data || []).find(r => String(r.email).toLowerCase() === me);
     if (!mine) { showNotAllowed(state.user.email); return; }
     state.admin = !!mine.is_admin;
+    state.thoughts = !!mine.thoughts;   // the Thoughts tab (Russ, 2026-11-22: a check box per person on the Admin tab)
     screen(el("p", { class: "hint", style: "text-align:center;margin-top:20vh" }, "Loading…"));
     await refresh();
   };
