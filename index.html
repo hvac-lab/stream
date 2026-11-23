@@ -2265,7 +2265,7 @@ function renderCopyright() {
     el("div", { class: "toolbar", style: "margin-bottom:8px" }, el("div", { class: "seg" }, ...presets.map(([k, label]) => el("button", { class: state.cr.preset === k ? "on" : "", onclick: () => setCr({ preset: k }) }, label)))),
     el("div", { class: "toolbar", style: "margin:0" }, el("label", {}, "From", fromIn), el("label", {}, "To", toIn), view === "report" ? el("label", {}, "Show", which) : null),
     el("p", { class: "hint", style: "margin:8px 0 0" }, `${fmtDate(parseYmd(from))} to ${fmtDate(parseYmd(to))}: ${rows.length} hymn${rows.length === 1 ? "" : "s"} streamed, ${shown.length} ${view === "list" ? "copyrighted" : "shown"}. `,
-      "Copyright status comes from the ACCA list Copyrighted Songs in ACCA Hymnals (updated 3.18.26). Admins can change a hymn with Edit on the Report page.")));
+      "Copyright status comes only from Onward Media's list Copyrighted Songs in ACCA Hymnals (updated 3.18.26).")));
 
   if (view === "list") {
     // every hymn on the copyright list, streamed in the period or not; one count each (streamCount)
@@ -2299,8 +2299,9 @@ function renderCopyright() {
   const editCell = (r) => {
     const cur = state.rights.get(r.key) || { status: "unknown" };
     if (state.crEdit !== r.key) {
-      return el("span", {}, el("span", { class: "chip " + cur.status }, RIGHTS_WORD[cur.status]), cur.note ? el("span", { class: "hint" }, " " + cur.note) : null,
-        state.admin ? el("button", { class: "small", style: "margin-left:6px", onclick: () => { state.crEdit = r.key; state.crMsg = null; render(); } }, "Edit") : null);
+      // no Edit button (Russ, 2026-11-22: "Remove the Edit button so only the Onward Media list counts"); the status
+      // comes only from the Onward Media / ACCA list (scripts\Import-HymnRights.ps1)
+      return el("span", {}, el("span", { class: "chip " + cur.status }, RIGHTS_WORD[cur.status]), cur.note ? el("span", { class: "hint" }, " " + cur.note) : null);
     }
     const sel = el("select", {}, ...Object.entries(RIGHTS_WORD).map(([v, t]) => { const o = el("option", { value: v }, t); if (cur.status === v) o.selected = true; return o; }));
     const ccli = el("input", { type: "text", value: cur.ccli || "", placeholder: "CCLI song #", style: "width:110px" });
