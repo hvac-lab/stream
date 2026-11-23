@@ -2245,7 +2245,7 @@ function sortTable(id, cols, rows, def, limit = 25, opts = {}) {
   const shown = all ? sorted : sorted.slice(0, limit);
   // c.head: a short heading that may wrap (c.label stays the full name in the hover title)
   const head = el("tr", {}, ...cols.map(c => el("th", { class: "sortable" + (c.num ? " nc" : "") + (c.cls ? " " + c.cls : "") + (c.head ? " wrap" : ""), "data-dir": c.key === col.key ? st.dir : null,
-    title: "Sort by " + c.label.toLowerCase(),
+    title: c.tip ? `${c.tip}\n(Click to sort by ${c.label.toLowerCase()}.)` : "Sort by " + c.label.toLowerCase(),
     onclick: () => { state.sorts[id] = { key: c.key, dir: c.key === col.key ? (st.dir === "desc" ? "asc" : "desc") : (c.num ? "desc" : "asc") }; store.set("sorts2", state.sorts); render(); } }, c.head || c.label)));
   const body = el("tbody", {}, ...shown.map(r => el("tr", { class: (opts.rowCls && opts.rowCls(r)) || null }, ...cols.map(c => el("td", { class: [c.num ? "nc" : "", c.cls || "", c.nowrap ? (c.nowrap === "wide" ? "nowrap-wide" : "nowrap") : ""].join(" ").trim() || null }, c.cell ? c.cell(r) : String(c.val(r) ?? ""))))));
   // opts.foot: a row under the sorted rows (a total); opts.tableCls: more classes on the table
@@ -2650,12 +2650,19 @@ function renderViewers() {
     rows.length ? sortTable("viewers", [
       { key: "date", label: "Date", val: r => r.run_key, cell: r => fmtShortDay(dateOnly(r.service_date)) + ", " + String(r.service_date).slice(0, 4), nowrap: "wide" },
       { key: "svc", label: "Service", val: r => svcName(r), cell: r => svcName(r) },
-      { key: "video", label: "Video", val: r => r.video_peak ?? -1, num: true, cls: "ctr", cell: r => r.video_peak == null ? el("span", { class: "hint", title: "No Vimeo stream for this service" }, "none") : String(r.video_peak) },
-      { key: "audio", label: "Audio", val: r => r.audio_peak ?? -1, num: true, cls: "ctr", cell: r => r.audio_peak == null ? el("span", { class: "hint" }, "–") : String(r.audio_peak) },
-      { key: "both", label: "Both", val: r => r.both, num: true, cls: "ctr both-col" },
-      { key: "plays", label: "Video plays", head: "Video plays", val: r => r.video_plays ?? -1, num: true, cls: "opt-col ctr", cell: r => r.video_plays == null ? "" : String(r.video_plays) },
-      { key: "vh", label: "Video hours watched", head: "Video hours", val: r => r.video_seconds ?? -1, num: true, cls: "opt-col ctr", cell: r => hrs(r.video_seconds) },
-      { key: "ah", label: "Audio listener-hours", head: "Audio hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col ctr", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1) },
+      { key: "video", label: "Video", val: r => r.video_peak ?? -1, num: true, cls: "ctr", cell: r => r.video_peak == null ? el("span", { class: "hint", title: "No Vimeo stream for this service" }, "none") : String(r.video_peak),
+        tip: "The most people watching the live video at the same moment (Vimeo)." },
+      { key: "audio", label: "Audio", val: r => r.audio_peak ?? -1, num: true, cls: "ctr", cell: r => r.audio_peak == null ? el("span", { class: "hint" }, "–") : String(r.audio_peak),
+        tip: "The most people listening to the radio stream at the same moment (Radio Mast)." },
+      { key: "both", label: "Both", val: r => r.both, num: true, cls: "ctr both-col",
+        tip: "Video and Audio added together; the same number as Views on the History tab." },
+      // what the numbers mean, shown when the mouse is over the heading (Russ, 2026-11-22)
+      { key: "plays", label: "Video plays", head: "Video plays", val: r => r.video_plays ?? -1, num: true, cls: "opt-col ctr", cell: r => r.video_plays == null ? "" : String(r.video_plays),
+        tip: "How many times the live video was started on Vimeo. One person who reloads the page or comes back later counts again, so this is usually more than the number of people." },
+      { key: "vh", label: "Video hours watched", head: "Video hours", val: r => r.video_seconds ?? -1, num: true, cls: "opt-col ctr", cell: r => hrs(r.video_seconds),
+        tip: "All the time everyone spent watching the video, added together (Vimeo's total view time). Three people watching one hour each = 3.0; ten people watching six minutes each = 1.0." },
+      { key: "ah", label: "Audio listener-hours", head: "Audio hours", val: r => r.audio_hours ?? -1, num: true, cls: "opt-col ctr", cell: r => r.audio_hours == null ? "" : Number(r.audio_hours).toFixed(1),
+        tip: "The same for the radio stream (Radio Mast): for each clock hour of the service, the average number of listeners, added up. 2 on average from 10 to 11 and 3 from 11 to 12 = 5.0. Whole clock hours, so a little before or after the service counts too." },
     ], rows, { key: "date", dir: "desc" }, 30, { sticky: true }) : el("p", { class: "hint" }, "No services in this time frame."),
     rows.length ? el("button", { class: "small", style: "margin-top:10px", onclick: () => downloadCsv(`viewers-${from}-to-${to}.csv`,
       ["Date", "Service", "Video viewers (most at once)", "Audio listeners (most at once)", "Both", "Video plays", "Video hours watched", "Audio listener-hours", "Vimeo sessions"],
