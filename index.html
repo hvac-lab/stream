@@ -1521,7 +1521,7 @@ function renderAnnouncements() {
       missing,
       el("h4", {}, `Announcements · ${anns.length}`),
       anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => {
-        const s = document.createElement("span"); s.innerHTML = fmtTimes(linkNames(String(a.text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])), commLinks()));
+        const s = document.createElement("span"); s.innerHTML = boldKey(fmtTimes(linkNames(String(a.text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])), commLinks())), a.bold);
         s.querySelectorAll("a").forEach(x => { x.target = "_blank"; x.rel = "noopener"; });
         return el("li", {}, s);
       })) : el("p", { class: "hint" }, "None."),
@@ -1578,6 +1578,27 @@ function fmtTimes(html) {
     .replace(/\b(at|@|from|until|till|by|starts?|begins?|beginning|starting)(\s+)(\d{1,2}):(\d{2})(?!\s*[ap]\.?\s*m|\d|:)/gi, (all, w, sp, h, m) => {
       const [ap, sure] = guess(h); const t = fix(h, m, ap);
       return `${w}${sp}${sure ? t : `<span style="${YELLOW}" title="am or pm? please check">${t}</span>`}`; })).join("");
+}
+// the key information of an announcement in bold, to catch the eye (Russ, 2026-11-22: "bold Thanksgiving Eve and
+// Wednesday and 7:30pm - in the future, bold the key info in this area to call the person's eyes to it"): the phrases
+// Claude names for the item (announcements.py "bold", e.g. "Thanksgiving Eve service"), the days of the week, dates
+// ("December 13") and times ("7:30pm", after fmtTimes). Only text outside tags; links stay links (bold inside them).
+const MONTHS_RE = "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?";
+function boldKey(html, phrases) {
+  const words = (phrases || []).map(p => String(p || "").trim()).filter(p => p.length > 2)
+    .map(p => p.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const parts = [
+    ...(words.length ? [words.sort((a, b) => b.length - a.length).join("|")] : []),
+    "\\b(?:Sun|Mon|Tues|Wednes|Thurs|Fri|Satur)day\\b",
+    `\\b${MONTHS_RE}\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,\\s*\\d{4})?\\b`,
+    "\\b\\d{1,2}:\\d{2}[ap]m(?:-\\d{1,2}:\\d{2}[ap]m)?",
+  ];
+  const re = new RegExp(parts.join("|"), "gi");
+  let inBold = 0;
+  return String(html || "").split(/(<[^>]+>)/).map(part => {
+    if (part.startsWith("<")) { if (/^<b\b/i.test(part)) inBold++; else if (/^<\/b>/i.test(part)) inBold = Math.max(0, inBold - 1); return part; }
+    return inBold ? part : part.replace(re, m => `<b>${m}</b>`);
+  }).join("");
 }
 const commLinks = () => ((state.comm || (demo ? DEMO_COMM : {})) || {}).links || {};
 // a greeting as "Church, ST": the church's name and the state from its place ("West Lafayette, IN", "Rochester, MN")
@@ -1711,13 +1732,13 @@ function commHtml(row) {
   const joinB = (a) => a.length < 2 ? (a[0] ? boldRef(a[0]) : "") : a.slice(0, -1).map(boldRef).join(", ") + " and " + boldRef(a[a.length - 1]);
   if (am.length) rd.push(`Our morning scripture reading was from ${joinB(am)}.`);
   if (pm.length) rd.push(`In the afternoon, we read from ${joinB(pm)}.`);
-  const notes = (both.announcements || []).map(a => fmtTimes(linkNames(esc(a.text), T.links)));
+  const notes = (both.announcements || []).map(a => boldKey(fmtTimes(linkNames(esc(a.text), T.links)), a.bold));
   // calendar events whose description starts "Announce:" (Russ, 2026-11-22), from 2 weeks before until the day
   const sunday = row.service_date, in14 = ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 14));
   const longDay = (s) => parseYmd(s).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}">${u}</a>`).replace(/\n/g, "<br>");
   for (const n of ((state.cal && state.cal.notes) || []).filter(n => n.date >= sunday && n.date <= in14))
-    notes.push(fmtTimes(`<b>${esc(n.title)}</b> – ${longDay(n.date)}${n.time ? ", " + esc(n.time) : ""}: ${linkNames(linkify(n.text), T.links)}`));
+    notes.push(boldKey(fmtTimes(`<b>${esc(n.title)}</b> – ${longDay(n.date)}${n.time ? ", " + esc(n.time) : ""}: ${linkNames(linkify(n.text), T.links)}`)));
   // Lookaheads from the calendar: one-time events after the picture's 3 months, up to a year ahead, the same title on
   // one line (Russ: repeating ones "after 3 months, we don't need to know. But there might be something in the Summer")
   let looks = T.lookaheads || [];
