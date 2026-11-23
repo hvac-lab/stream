@@ -240,6 +240,9 @@
   nav.subtabs button.on { color: var(--ink); font-weight: 650; border-bottom-color: var(--s1); }
   nav.subtabs.annsub { margin: 0 0 14px; }
   .gmap svg { width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: grab; }
+  /* each day's churches in 3 columns, top to bottom then across (Russ, 2026-11-22); 2 on a narrow phone */
+  ul.anngreet { columns: 3; column-gap: 24px; } ul.anngreet li { break-inside: avoid; }
+  @media (max-width: 480px) { ul.anngreet { columns: 2; column-gap: 16px; } }
   .gmaphead { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 10px; } .gmaphead h3 { margin: 0; flex: 1 1 auto; }
   .gmaphead .gmaptiles { margin: 0; grid-template-columns: repeat(3, minmax(0, 160px)); } .gmaphead .tile { padding: 8px 12px; } .gmaphead .tile b { font-size: 24px; }
   .gmap .gmapbar { margin: 0 0 6px; } .gmap .gmapinfo { margin: 6px 0 0; color: var(--ink-2); }
@@ -1195,10 +1198,10 @@ function renderGreetings() {
   const tbl = el("table", { class: "data" }, el("tr", {}, el("th", {}, "Church"), el("th", {}, "Place"), el("th", { class: "nc" }, "Greetings"), el("th", { class: "nc" }, "Last")),
     ...rows.map(([n, k]) => el("tr", {}, el("td", {}, n), el("td", {}, where(n)), el("td", { class: "nc" }, String(k)), el("td", { class: "nc" }, fmtDate(parseYmd(last.get(n)))))),
     el("tr", {}, el("td", {}, el("b", {}, "Total")), el("td", {}, `${rows.length} church${rows.length === 1 ? "" : "es"}`), el("td", { class: "nc" }, el("b", {}, String(total))), el("td", {})));
-  kids.push(el("section", { class: "card" }, el("h3", {}, "Greetings by church"),
+  const tallyCard = el("section", { class: "card" }, el("h3", {}, "Greetings by church"),
     rows.length ? tbl : el("p", { class: "hint" }, "No greetings in this time frame."),
     el("p", { class: "hint", style: "margin:8px 0 0" }, `${services} service day${services === 1 ? "" : "s"} in the time frame; a church greeting at the morning and the afternoon service counts 2.`,
-      unmatched ? ` ${unmatched} greeting${unmatched === 1 ? "" : "s"} not matched to a church (see the days below).` : "")));
+      unmatched ? ` ${unmatched} greeting${unmatched === 1 ? "" : "s"} not matched to a church (see the days below).` : ""));
   // the map: every church, its count in the frame (0 is fine)
   // two tiles right of the title (Russ, 2026-11-22): the church greetings in the time frame, and the share of our
   // churches that sent at least one
@@ -1216,7 +1219,8 @@ function renderGreetings() {
     if (away.length) mapCard.append(el("p", { class: "hint", style: "margin:4px 0 0" }, "Not on the map (overseas or no address): ",
       away.map(c => `${c.name}${c.town || c.state ? " (" + [c.town, c.state].filter(Boolean).join(", ") + ")" : ""}: ${counts.get(c.name) || 0}`).join(" · ")));
   }
-  kids.push(mapCard);
+  // the map first, then the table (Russ, 2026-11-22: "swap the map and greetings table")
+  kids.push(mapCard, tallyCard);
   if (!state.ann.length) kids.push(el("section", { class: "card" }, el("p", { class: "hint" }, "No services yet.")));
   for (const row of state.ann) {
     const gs = (row.combined || {}).greetings || [];
