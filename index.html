@@ -230,6 +230,7 @@
   .adminAdd input[type=text] { padding: 8px 10px; font-size: 16px; }
   label.chk { display:inline-flex; align-items:center; gap:5px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
   /* Admin tab: one row per person, labeled on/off buttons (2026-11-22) */
+  .usort { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 8px; } .usort button.on { border-color: var(--s1); background: var(--band); font-weight: 600; }
   .ulist { display: grid; gap: 0; } .urow { padding: 12px 0; border-top: 1px solid var(--border); } .urow:first-child { border-top: 0; padding-top: 4px; }
   .utop { display: flex; gap: 8px 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
   .uwho { min-width: 0; flex: 1 1 220px; } .uname { font-weight: 600; } .umail { color: var(--ink-2); font-size: 14px; overflow-wrap: anywhere; }
@@ -2744,7 +2745,18 @@ async function refreshAdmin(note) {
       return p;
     };
     const list = el("div", { class: "ulist" });
-    const sorted = [...rows].sort((a, b) => (b.email.toLowerCase() === me) - (a.email.toLowerCase() === me) || (a.note || a.email).localeCompare(b.note || b.email));
+    // sort by name, email, a role or the date added (Russ, 2026-11-22: "make this so I can sort based on users, roles,
+    // etc."); a role puts the people who have it first; the same button again turns the order around
+    const SORTS = [["name", "Name"], ["email", "Email"], ["admin", "Admin"], ["general", "General"], ["announcements", "Announcements"], ["thoughts", "Thoughts"], ["added", "Added"]];
+    const ss = state.admSort || (state.admSort = store.get("admSort", { key: "name", dir: "asc" }));
+    const nameOf = (u) => (u.note || u.email).toLowerCase();
+    const sortVal = (u) => ss.key === "name" ? nameOf(u) : ss.key === "email" ? u.email.toLowerCase() : ss.key === "added" ? String(u.added_at || "")
+      : (ss.key === "admin" ? u.is_admin : u[ss.key]) ? 0 : 1;
+    const sorted = [...rows].sort((a, b) => { const x = sortVal(a), y = sortVal(b); return ((x < y ? -1 : x > y ? 1 : 0) * (ss.dir === "asc" ? 1 : -1)) || nameOf(a).localeCompare(nameOf(b)); });
+    box.append(el("div", { class: "usort" }, el("span", { class: "hint" }, "Sort by"), ...SORTS.filter(([k]) => hasAcc || !["general", "announcements", "thoughts"].includes(k)).map(([k, label]) =>
+      el("button", { class: "small" + (ss.key === k ? " on" : ""), title: `Sort by ${label.toLowerCase()}${ss.key === k ? " (click again to turn around)" : ""}`,
+        onclick: () => { state.admSort = { key: k, dir: ss.key === k ? (ss.dir === "asc" ? "desc" : "asc") : (k === "added" ? "desc" : "asc") }; store.set("admSort", state.admSort); refreshAdmin(); } },
+        label, ss.key === k ? (ss.dir === "asc" ? " ▲" : " ▼") : ""))));
     for (const u of sorted) {
       const self = u.email.toLowerCase() === me;
       const saveAdmin = async (c) => { c.disabled = true;
