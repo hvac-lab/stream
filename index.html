@@ -1753,6 +1753,9 @@ function commHtml(row) {
       })) : "") +
     `</div>`;
 }
+// every link in the email opens in a new tab on a PC (Russ, 2026-11-22: "If they click any link on a PC, it should
+// open in a new tab"); also for an email saved before this
+const newTabLinks = (html) => String(html || "").replace(/<a\b(?![^>]*\btarget=)/gi, '<a target="_blank" rel="noopener"');
 const DEMO_COMM = { collections: { 11: "ACCFS", 12: "General Fund AND Building Fund" },
   lookaheads: ["<b>Communion</b> at Morris North = April 10, 2027"],
   churchInfo: ["Morris North Apostolic Christian Church address: <b>418 Birch Ave</b>, Morris, MN 56267"],
@@ -1774,7 +1777,7 @@ function commEmail(row) {
   const d = parseYmd(key);
   const subject = String((state.comm || {}).subject || "Morris North Communication {date}").replace("{date}", `${d.getMonth() + 1}.${d.getDate()}.${String(d.getFullYear()).slice(2)}`);
   const prev = el("div", { class: "mailprev", contenteditable: editing ? "true" : null });
-  prev.innerHTML = saved || commHtml(row);
+  prev.innerHTML = newTabLinks(saved || commHtml(row));
   prev.addEventListener("input", () => store.set("mail." + key, prev.innerHTML));
   // no "Made from Sunday's recording." (Russ, 2026-11-22: "Remove Made from Sunday's recording.")
   const msg = el("span", { class: "hint" }, saved ? "Your edits (kept in this browser). Reset shows changes made in the boxes above." : "");
@@ -2928,6 +2931,13 @@ async function boot() {
   await onSession(session);
   state.sb.auth.onAuthStateChange((event, s) => { if (event === "SIGNED_IN" || event === "SIGNED_OUT") onSession(s); });
 }
+// every web or email link on the page opens in a new tab (Russ, 2026-11-22: "If they click any link on a PC, it should
+// open in a new tab"); links inside the page (#...) stay as they are
+document.addEventListener("click", (e) => {
+  const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+  if (!a || a.target) return;
+  if (/^(https?:|mailto:)/i.test(a.getAttribute("href") || "")) { a.target = "_blank"; a.rel = "noopener"; }
+}, true);
 boot();
 })();
 </script>
