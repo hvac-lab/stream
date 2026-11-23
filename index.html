@@ -2811,9 +2811,12 @@ function drawAdmin(box, rows, note) {
   email.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); });
   box.append(el("div", { class: "uadd" }, el("h3", {}, "Add a person"), el("div", { class: "uaddf" }, email, name),
       el("div", { class: "uaddf" }, ...newBoxes), el("div", { class: "uaddf" }, add, msg)),
-    el("p", { class: "hint", style: "margin:12px 0 0" },
-      hasAcc ? "General = Now, History, Ministers, Bible, Viewers, Hymns, Copyright and Greetings (and switching a service to run by hand). Announcements = the Announcements tab and the weekly email. Thoughts = the Thoughts tab. " : "Everyone on the list sees the status and may switch a service to run by hand. ",
-      "Admin = also Process Map, Tests and Admin. A box saves as soon as it is clicked. Click a heading to sort. This list is separate from the HVAC page's list."));
+    // each box's name in bold, one per line (Russ, 2026-11-22)
+    el("div", { class: "hint ukey", style: "margin:12px 0 0" },
+      ...(hasAcc ? [["General", "Now, History, Ministers, Bible, Viewers, Hymns, Copyright and Greetings (and switching a service to run by hand)."],
+        ["Announcements", "the Announcements tab and the weekly email."], ["Thoughts", "the Thoughts tab."]] : []).map(([k, t]) => el("div", {}, el("b", {}, k), " = " + t)),
+      el("div", {}, el("b", {}, "Admin"), " = also Process Map, Tests and Admin."),
+      el("div", { style: "margin-top:6px" }, "A box saves as soon as it is clicked. Click a heading to sort. This list is separate from the HVAC page's list.")));
 }
 
 // ------------------------------------------------------------------ refresh loop: every 5 s while something runs, else 20 s
