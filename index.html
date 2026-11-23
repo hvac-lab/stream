@@ -1201,10 +1201,10 @@ function renderGreetings() {
   const greeted = rows.filter(([n]) => !churchList.length || churchList.some(c => c.name === n)).length;
   const pct = churchList.length ? Math.round(100 * greeted / churchList.length) : 0;
   const mapCard = el("section", { class: "card" }, el("div", { class: "gmaphead" }, el("h3", {}, "Our churches"),
-    el("div", { class: "tiles gmaptiles" }, tile(total, "church greetings"),
-      // the number of different churches greeting us in the frame, left of the percent (Russ, 2026-11-22)
-      tile(rows.length, `church location${rows.length === 1 ? "" : "s"}`),
-      tile(`${pct}%`, churchList.length ? `of our churches (${greeted} of ${churchList.length})` : "of our churches"))));
+    // order (Russ, 2026-11-22): church locations (different churches greeting us in the frame), percent, greetings far right
+    el("div", { class: "tiles gmaptiles" }, tile(rows.length, `church location${rows.length === 1 ? "" : "s"}`),
+      tile(`${pct}%`, churchList.length ? `of our churches (${greeted} of ${churchList.length})` : "of our churches"),
+      tile(total, "church greetings"))));
   if (!churchList.length) mapCard.append(el("p", { class: "hint" }, "The church locations are not on the page yet."));
   else {
     mapCard.append(churchMapNode(churchList, counts));
