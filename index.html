@@ -407,7 +407,12 @@ applyTheme();
 // ------------------------------------------------------------------ helpers
 const main = $("#main");
 // redraws keep the scroll position (the page refreshes itself and after each button)
-const screen = (...kids) => { const y = window.scrollY; main.replaceChildren(...kids.filter(k => k != null)); window.scrollTo(0, y); liveVideoSync(); };
+// keep the place on the page across a redraw. The scroll is taken when render() starts: building the new page can move
+// a kept node (the Greetings map) out of the old one first, which shortens the page and pulls the scroll up (Russ,
+// 2026-11-22: "when I click Greetings by day to sort, the page jumps up")
+let renderY = null;
+const screen = (...kids) => { const y = renderY && performance.now() - renderY.t < 1000 ? renderY.y : window.scrollY; renderY = null;
+  main.replaceChildren(...kids.filter(k => k != null)); window.scrollTo(0, y); liveVideoSync(); };
 
 // ------------------------------------------------------------------ live video (Russ, 2026-11-22: "show the video in
 // this box between the Ministers and Hymns so far. About twice the size of the current max table. Could it be live?")
@@ -753,6 +758,7 @@ function renderTabs() {
   }
 }
 function render() {
+  renderY = { y: window.scrollY, t: performance.now() };
   setPc(); renderTabs();
   if (!state.tab) return screen(el("section", { class: "card" }, el("h2", {}, "Nothing switched on yet"),
     el("p", {}, "You are on the list, but no part of the page is switched on for you. Ask an admin to check General, Announcements or Thoughts for you on the Admin tab.")));
