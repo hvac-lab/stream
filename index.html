@@ -1737,7 +1737,7 @@ function commHtml(row) {
     H("New Notes:") + ul(notes.length ? notes : [blank]) +
     comingUp + calImg +
     // greetings are on their own tab for now (Russ, 2026-11-22: "Remove the Greetings ... put them in a new tab")
-    (coll && !pic ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${esc(coll)}</p>` : "") +
+    (coll && !pic ? `<p style="margin:14px 0 4px"><b>Monthly Collection</b> = ${linkNames(esc(coll), T.links)}</p>` : "") +
     (looks.length ? H("Lookaheads") + ul(looks) : "") +
     // a solid line above the parts that stay the same every week (Russ, 2026-11-22)
     `<hr style="border:0; border-top:2px solid #111; margin:22px 0 8px">` +
@@ -1746,7 +1746,8 @@ function commHtml(row) {
     (Object.keys(T.collections || {}).length ? `<p style="margin:14px 0 4px"><u>Monthly <b>charity collections</b> are scheduled as follows:</u></p>` +
       // this month's line bold (Russ, 2026-11-22: "Bold the month November: ACCFS")
       ul(Object.entries(T.collections).sort((a, b) => a[0] - b[0]).map(([m, w]) => {
-        const line = `${new Date(2000, m - 1, 1).toLocaleDateString("en-US", { month: "long" })}: ${esc(w)}`;
+        // the names linked to their web sites (Russ, 2026-11-22: "Make the name an URL, for sure the AC ones")
+        const line = `${new Date(2000, m - 1, 1).toLocaleDateString("en-US", { month: "long" })}: ${linkNames(esc(w), T.links)}`;
         // and highlighted in yellow (Russ, 2026-11-22: "highlight in yellow November: ACCFS")
         return Number(m) === d.getMonth() + 1 ? `<b style="background-color:#ffff00">${line}</b>` : line;
       })) : "") +
