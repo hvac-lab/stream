@@ -1521,7 +1521,7 @@ function renderAnnouncements() {
       missing,
       el("h4", {}, `Announcements · ${anns.length}`),
       anns.length ? el("ul", { class: "annlist" }, ...anns.map(a => {
-        const s = document.createElement("span"); s.innerHTML = linkNames(String(a.text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])), commLinks());
+        const s = document.createElement("span"); s.innerHTML = fmtTimes(linkNames(String(a.text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])), commLinks()));
         s.querySelectorAll("a").forEach(x => { x.target = "_blank"; x.rel = "noopener"; });
         return el("li", {}, s);
       })) : el("p", { class: "hint" }, "None."),
@@ -1551,6 +1551,33 @@ function linkNames(html, links) {
   const url = Object.fromEntries(keys.map(k => [ek(k).toLowerCase(), links[k]]));
   return html.split(/(<a\b[^>]*>[\s\S]*?<\/a>|<[^>]+>)/i)
     .map(part => part.startsWith("<") ? part : part.replace(re, m => `<a href="${url[m.toLowerCase()]}">${m}</a>`)).join("");
+}
+// times written "7:00pm" / "10:15am" (Russ, 2026-11-22: "after the times, put pm in small case 7:00pm. If you're not
+// sure, highlight in yellow on the page. 10:15 and 10:30 are am"). Spoken times ("2:45 p.m.", "7 PM") are rewritten;
+// a time without am / pm after "at", "from", "until", ... gets one: 10-11 am, 12 and 1-5 pm, 6-9 pm when the item says
+// evening / night / supper / Wednesday (am when it says morning / breakfast); any other guess is highlighted yellow so
+// it is checked before the email goes out. Tags (links) are left alone; Bible references (no "at" before them) too.
+const YELLOW = "background-color:#ffff00";
+function fmtTimes(html) {
+  const s = String(html || "");
+  const plain = s.replace(/<[^>]+>/g, " ");
+  const evening = /\b(evening|night|supper|dinner|wednesday|wed\.?|tonight)\b/i.test(plain), morning = /\b(morning|breakfast|brunch)\b/i.test(plain);
+  const fix = (h, m, ap) => `${Number(h)}:${m || "00"}${ap.toLowerCase()}m`;
+  const guess = (h) => { h = Number(h); if (h === 10 || h === 11) return ["a", true]; if (h === 12 || (h >= 1 && h <= 5)) return ["p", true];
+    if (h >= 6 && h <= 9) return evening ? ["p", true] : morning ? ["a", true] : ["p", false]; return ["a", false]; };
+  return s.split(/(<[^>]+>)/).map(part => part.startsWith("<") ? part : part
+    // a range with one am / pm at the end: "9:30-11:30 am" -> both get it (the start the other way when it would be later)
+    // (the dot after "m" goes only in the "p.m." spelling; "5 pm." keeps the sentence's full stop)
+    .replace(/\b(\d{1,2})(?::(\d{2}))?\s*(?:-|–|to)\s*(\d{1,2})(?::(\d{2}))?\s*([ap])(\.)?\s*m\b(\.)?/gi, (all, h1, m1, h2, m2, ap, d1, d2) => {
+      const a2 = ap.toLowerCase(), t1 = Number(h1) % 12 * 60 + Number(m1 || 0), t2 = Number(h2) % 12 * 60 + Number(m2 || 0);
+      const a1 = a2 === "p" && t1 > t2 ? "a" : a2;
+      return `${fix(h1, m1, a1)}-${fix(h2, m2, a2)}${d1 ? "" : d2 || ""}`; })
+    // "2:45 p.m.", "7 PM", "10:15 A.M." -> "2:45pm", "7:00pm", "10:15am"
+    .replace(/(?<![\d:])(\d{1,2})(?::(\d{2}))?\s*([ap])(\.)?\s*m\b(\.)?(?![a-z])/gi, (all, h, m, ap, d1, d2) => fix(h, m, ap) + (d1 ? "" : d2 || ""))
+    // a bare time after a time word: add am / pm
+    .replace(/\b(at|@|from|until|till|by|starts?|begins?|beginning|starting)(\s+)(\d{1,2}):(\d{2})(?!\s*[ap]\.?\s*m|\d|:)/gi, (all, w, sp, h, m) => {
+      const [ap, sure] = guess(h); const t = fix(h, m, ap);
+      return `${w}${sp}${sure ? t : `<span style="${YELLOW}" title="am or pm? please check">${t}</span>`}`; })).join("");
 }
 const commLinks = () => ((state.comm || (demo ? DEMO_COMM : {})) || {}).links || {};
 // a greeting as "Church, ST": the church's name and the state from its place ("West Lafayette, IN", "Rochester, MN")
@@ -1684,13 +1711,13 @@ function commHtml(row) {
   const joinB = (a) => a.length < 2 ? (a[0] ? boldRef(a[0]) : "") : a.slice(0, -1).map(boldRef).join(", ") + " and " + boldRef(a[a.length - 1]);
   if (am.length) rd.push(`Our morning scripture reading was from ${joinB(am)}.`);
   if (pm.length) rd.push(`In the afternoon, we read from ${joinB(pm)}.`);
-  const notes = (both.announcements || []).map(a => linkNames(esc(a.text), T.links));
+  const notes = (both.announcements || []).map(a => fmtTimes(linkNames(esc(a.text), T.links)));
   // calendar events whose description starts "Announce:" (Russ, 2026-11-22), from 2 weeks before until the day
   const sunday = row.service_date, in14 = ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 14));
   const longDay = (s) => parseYmd(s).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}">${u}</a>`).replace(/\n/g, "<br>");
   for (const n of ((state.cal && state.cal.notes) || []).filter(n => n.date >= sunday && n.date <= in14))
-    notes.push(`<b>${esc(n.title)}</b> – ${longDay(n.date)}${n.time ? ", " + esc(n.time) : ""}: ${linkNames(linkify(n.text), T.links)}`);
+    notes.push(fmtTimes(`<b>${esc(n.title)}</b> – ${longDay(n.date)}${n.time ? ", " + esc(n.time) : ""}: ${linkNames(linkify(n.text), T.links)}`));
   // Lookaheads from the calendar: one-time events after the picture's 3 months, up to a year ahead, the same title on
   // one line (Russ: repeating ones "after 3 months, we don't need to know. But there might be something in the Summer")
   let looks = T.lookaheads || [];
@@ -1704,7 +1731,7 @@ function commHtml(row) {
       g.dates.push(e.date); if (g.time !== e.time) g.time = ""; groups.set(e.title, g);
     }
     const day = (x) => { const t = parseYmd(x); return t.toLocaleDateString("en-US", t.getFullYear() !== d.getFullYear() ? { month: "long", day: "numeric", year: "numeric" } : { month: "long", day: "numeric" }); };
-    looks = [...groups.values()].map(g => `<b>${esc(g.title)}</b>${g.time ? " (" + esc(g.time) + ")" : ""}: ${g.dates.map(day).join(", ")}`);
+    looks = [...groups.values()].map(g => fmtTimes(`<b>${esc(g.title)}</b>${g.time ? " (" + esc(g.time) + ")" : ""}: ${g.dates.map(day).join(", ")}`));
   }
   const greet = (both.greetings || []).map(g => g.church ? esc(greetName(g)) : esc(g.heard));
   const coll = ((state.cal && state.cal.collections) || {})[row.service_date.slice(0, 7)] || (T.collections || {})[String(d.getMonth() + 1)];
