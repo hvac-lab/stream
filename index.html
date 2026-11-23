@@ -1121,7 +1121,7 @@ function churchMapNode(churches, counts) {
     zoomG.append(land, borders, outline, ...inset);
     const pts = churches.filter(c => c.lat != null).map(c => ({ c, n: counts.get(c.name) || 0, p: where(c) })).filter(x => x.p);
     pts.sort((a, b) => a.n - b.n);   // the bigger circles on top
-    const info = el("p", { class: "hint gmapinfo" }, "Tap or click a circle for the church.");
+    const info = el("p", { class: "hint gmapinfo" });   // empty until a church is tapped / clicked
     const marks = pts.map(({ c, n, p }) => {
       // one size for every church with greetings, the count only in the number (Russ, 2026-11-22: "don't make it
       // bigger, it will overlap other churches")
@@ -1186,9 +1186,9 @@ function churchMapNode(churches, counts) {
       btn("+", "Zoom in", () => sel.transition().duration(250).call(zoom.scaleBy, 1.8)),
       btn("−", "Zoom out", () => sel.transition().duration(250).call(zoom.scaleBy, 1 / 1.8)),
       btn("←", "Move left", move(1, 0)), btn("↑", "Move up", move(0, 1)), btn("↓", "Move down", move(0, -1)), btn("→", "Move right", move(-1, 0)),
-      btn("Whole map", "Back to the whole map", () => sel.transition().duration(300).call(zoom.transform, d3.zoomIdentity)),
-      el("span", { class: "hint" }, "PC: mouse wheel or + to zoom, drag to move. Phone: pinch to zoom, one finger to move."));
-    holder.replaceChildren(bar, svg, info, el("p", { class: "hint", style: "margin:2px 0 0" }, "Blue: greetings in the time frame (the number in the circle); gray: none; orange: Morris North."));
+      btn("Whole map", "Back to the whole map", () => sel.transition().duration(300).call(zoom.transform, d3.zoomIdentity)));
+    // no help text or color key under the map (Russ, 2026-11-22: "remove these words"); a tapped church still shows here
+    holder.replaceChildren(bar, svg, info);
     requestAnimationFrame(layout);
   }).catch(() => { holder.replaceChildren(el("p", { class: "hint" }, "The map could not be loaded.")); });
   return holder;
