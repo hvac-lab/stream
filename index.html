@@ -230,7 +230,11 @@
   .adminAdd input[type=text] { padding: 8px 10px; font-size: 16px; }
   label.chk { display:inline-flex; align-items:center; gap:5px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
   /* Admin tab: one row per person, labeled on/off buttons (2026-11-22) */
-  .usort { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 8px; } .usort button.on { border-color: var(--s1); background: var(--band); font-weight: 600; }
+  /* the Admin table: no vertical lines, a box per role, name + email in one cell (Russ, 2026-11-22) */
+  table.data.utable td, table.data.utable th { border-left: 0; border-right: 0; } table.data.utable td { vertical-align: middle; }
+  table.data.utable .uwho { min-width: 170px; } table.data.utable .umail { overflow-wrap: normal; word-break: normal; white-space: nowrap; }
+  input.ubox { width: 18px; height: 18px; accent-color: var(--s1); cursor: pointer; margin: 0; vertical-align: middle; } input.ubox:disabled { cursor: default; opacity: .6; }
+  table.data.utable .uact { flex-wrap: nowrap; justify-content: flex-end; }
   .ulist { display: grid; gap: 0; } .urow { padding: 12px 0; border-top: 1px solid var(--border); } .urow:first-child { border-top: 0; padding-top: 4px; }
   .utop { display: flex; gap: 8px 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
   .uwho { min-width: 0; flex: 1 1 220px; } .uname { font-weight: 600; } .umail { color: var(--ink-2); font-size: 14px; overflow-wrap: anywhere; }
@@ -767,7 +771,7 @@ function render() {
   setPc(); renderTabs();
   if (!state.tab) return screen(el("section", { class: "card" }, el("h2", {}, "Nothing switched on yet"),
     el("p", {}, "You are on the list, but no part of the page is switched on for you. Ask an admin to check General, Announcements or Thoughts for you on the Admin tab.")));
-  main.className = ["history", "copyright", "map", ...Object.keys(STATS_TABS)].includes(state.tab) ? "" : "narrow";
+  main.className = ["history", "copyright", "map", "admin", ...Object.keys(STATS_TABS)].includes(state.tab) ? "" : "narrow";   // Admin wide for its table
   if (state.tab === "history") return renderHistory();
   if (STATS_TABS[state.tab]) return renderStats();
   if (state.tab === "copyright") return renderCopyright();
@@ -2717,107 +2721,99 @@ async function loadUsers() {
   if (error) throw new Error(error.message);
   state.users = data || []; return state.users;
 }
+// The list as a sortable table without vertical lines, one column per box, headed with the box's own name (Russ,
+// 2026-11-22: "make it like a table with no vertical lines, Call the heading what the tag is"; before: "make this so I can
+// sort based on users, roles, etc."). A box saves as soon as it is clicked. General = every tab except Admin,
+// Announcements and Thoughts; Announcements = the Announcements tab; Thoughts = the Thoughts tab. The role columns show
+// once supabase\stream_status_11.sql has run. Drawn from the last list at once (no "Loading" flash when sorting), then
+// read again from the database.
 function renderAdmin() {
-  screen(el("section", { class: "card", id: "adminList" }, el("h2", {}, "Who may sign in"), "Loading…"));
-  refreshAdmin();
+  const box = el("section", { class: "card", id: "adminList" });
+  if (state.users) drawAdmin(box, state.users, state.adminNote); else box.append(el("h2", {}, "Who may sign in"), "Loading…");
+  screen(box);
+  refreshAdmin(state.adminNote);
 }
 async function refreshAdmin(note) {
-  const box = $("#adminList"); if (!box) return;
+  state.adminNote = note || "";
+  try { const rows = await loadUsers(); const box = $("#adminList"); if (box) drawAdmin(box, rows, state.adminNote); }
+  catch (e) { const box = $("#adminList"); if (box) box.replaceChildren(el("b", {}, "Could not load the list: "), String(e.message || e)); }
+}
+function drawAdmin(box, rows, note) {
   const me = String(state.user?.email || "").toLowerCase();
-  try {
-    const rows = await loadUsers();
-    box.replaceChildren(el("h2", {}, `Who may sign in · ${rows.length}`));
-    // One row per person (Russ, 2026-11-22: "I feel like you can do better. This is unusable" - the old table broke the
-    // email addresses into fragments in the narrow page): name + email on top, Edit / Remove on the right, and under it
-    // four labeled on/off buttons: Admin, General, Announcements, Thoughts. Each saves as soon as it is clicked.
-    //   General = every tab except Admin, Announcements and Thoughts; Announcements = the Announcements tab; Thoughts =
-    //   the Thoughts tab ("add a checkbox for Announcements, if checked, users only see it. And a checkbox for general,
-    //   that is everything except admin and thoughts and Announcements"). Shown once supabase\stream_status_11.sql ran.
-    const hasAcc = !demo ? rows.some(u => "general" in u) : true;
-    const ACCESS = [["general", "General", "Now, History, Greetings, Ministers, Hymns, Bible, Copyright, Viewers"], ["announcements", "Announcements", "The Announcements tab and the weekly email"],
-                    ["thoughts", "Thoughts", "The Thoughts tab (questions on what was read and preached)"]];
-    const mineKey = { general: "general", announcements: "annOk", thoughts: "thoughts" };
-    // a pill with a check box inside: filled when on
-    const pill = (label, tip, on, onchange, disabled) => {
-      const c = el("input", { type: "checkbox" }); c.checked = !!on; if (disabled) c.disabled = true;
-      const p = el("label", { class: "upill" + (on ? " on" : "") + (disabled ? " off" : ""), title: tip }, c, label);
-      c.onchange = () => { p.classList.toggle("on", c.checked); if (onchange) onchange(c); };
-      return p;
-    };
-    const list = el("div", { class: "ulist" });
-    // sort by name, email, a role or the date added (Russ, 2026-11-22: "make this so I can sort based on users, roles,
-    // etc."); a role puts the people who have it first; the same button again turns the order around
-    const SORTS = [["name", "Name"], ["email", "Email"], ["admin", "Admin"], ["general", "General"], ["announcements", "Announcements"], ["thoughts", "Thoughts"], ["added", "Added"]];
-    const ss = state.admSort || (state.admSort = store.get("admSort", { key: "name", dir: "asc" }));
-    const nameOf = (u) => (u.note || u.email).toLowerCase();
-    const sortVal = (u) => ss.key === "name" ? nameOf(u) : ss.key === "email" ? u.email.toLowerCase() : ss.key === "added" ? String(u.added_at || "")
-      : (ss.key === "admin" ? u.is_admin : u[ss.key]) ? 0 : 1;
-    const sorted = [...rows].sort((a, b) => { const x = sortVal(a), y = sortVal(b); return ((x < y ? -1 : x > y ? 1 : 0) * (ss.dir === "asc" ? 1 : -1)) || nameOf(a).localeCompare(nameOf(b)); });
-    box.append(el("div", { class: "usort" }, el("span", { class: "hint" }, "Sort by"), ...SORTS.filter(([k]) => hasAcc || !["general", "announcements", "thoughts"].includes(k)).map(([k, label]) =>
-      el("button", { class: "small" + (ss.key === k ? " on" : ""), title: `Sort by ${label.toLowerCase()}${ss.key === k ? " (click again to turn around)" : ""}`,
-        onclick: () => { state.admSort = { key: k, dir: ss.key === k ? (ss.dir === "asc" ? "desc" : "asc") : (k === "added" ? "desc" : "asc") }; store.set("admSort", state.admSort); refreshAdmin(); } },
-        label, ss.key === k ? (ss.dir === "asc" ? " ▲" : " ▼") : ""))));
-    for (const u of sorted) {
-      const self = u.email.toLowerCase() === me;
-      const saveAdmin = async (c) => { c.disabled = true;
-        try { await rpc("stream_admin_add_user", { p_email: u.email, p_note: u.note || null, p_admin: c.checked }); refreshAdmin(`${u.note || u.email}: Admin ${c.checked ? "on" : "off"}.`); }
-        catch (e) { refreshAdmin("Could not save: " + (e.message || e)); } };
-      const pills = [pill("Admin", self ? "You cannot take admin away from yourself" : "Process Map, Tests and Admin; manages this list", u.is_admin, saveAdmin, self),
-        ...(!hasAcc ? [] : ACCESS.map(([what, label, tip]) => pill(label, tip, u[what], async (c) => { c.disabled = true;
-          try { await rpc("stream_admin_set_access", { p_email: u.email, p_what: what, p_on: c.checked });
-            if (self) { state[mineKey[what]] = c.checked; renderTabs(); }
-            refreshAdmin(`${u.note || u.email}: ${label} ${c.checked ? "on" : "off"}.`); }
-          catch (e) { refreshAdmin("Could not save: " + (e.message || e)); } })))];
-      const who = el("div", { class: "uwho" },
-        el("div", { class: "uname" }, u.note || u.email, self ? el("span", { class: "hint" }, " (you)") : null),
-        u.note ? el("div", { class: "umail" }, u.email) : null,
-        el("div", { class: "umeta" }, [u.added_at ? `added ${fmtShortDay(new Date(u.added_at))}` : "", !u.added_by ? "" : /@/.test(u.added_by) ? `by ${u.added_by}` : u.added_by].filter(Boolean).join(", ")));
-      const rm = el("button", { class: "small danger", title: self ? "You cannot remove yourself" : "Remove " + u.email }, "Remove");
-      if (self) rm.disabled = true;
-      const edit = el("button", { class: "small", title: "Change the name" }, "Edit name");
-      const act = el("div", { class: "uact" }, edit, rm);
-      const restore = () => act.replaceChildren(edit, rm);
-      rm.onclick = () => {
-        const yes = el("button", { class: "small danger", onclick: async () => { yes.disabled = true;
-          try { await rpc("stream_admin_remove_user", { p_email: u.email }); refreshAdmin(`${u.email} removed.`); }
-          catch (e) { refreshAdmin("Could not remove: " + (e.message || e)); } } }, "Really remove?");
-        act.replaceChildren(yes, el("button", { class: "small", onclick: restore }, "Cancel"));
-      };
-      edit.onclick = () => {
-        const nameIn = el("input", { type: "text", value: u.note || "", placeholder: "name", style: "width:200px;max-width:100%;padding:6px 8px;font-size:16px" });
-        const save = el("button", { class: "small primary", onclick: async () => { save.disabled = true;
-          try { await rpc("stream_admin_add_user", { p_email: u.email, p_note: nameIn.value.trim() || null, p_admin: !!u.is_admin }); refreshAdmin(`${u.email} updated.`); }
-          catch (e) { refreshAdmin("Could not save: " + (e.message || e)); } } }, "Save");
-        const cancel = el("button", { class: "small", onclick: () => refreshAdmin() }, "Cancel");
-        nameIn.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); if (e.key === "Escape") cancel.click(); });
-        who.replaceChildren(nameIn, el("div", { class: "umail" }, u.email)); act.replaceChildren(save, cancel); nameIn.focus();
-      };
-      list.append(el("div", { class: "urow" }, el("div", { class: "utop" }, who, act), el("div", { class: "upills" }, ...pills)));
-    }
-    box.append(list);
-    // add a person: email, name and the same four buttons (a new person starts with General only)
-    const email = el("input", { type: "text", placeholder: "email address (Google account)", autocomplete: "off" });
-    const name = el("input", { type: "text", placeholder: "name", autocomplete: "off" });
-    const want = { admin: false, general: true, announcements: false, thoughts: false };
-    const newPills = [pill("Admin", "Process Map, Tests and Admin; manages this list", false, (c) => { want.admin = c.checked; }),
-      ...(!hasAcc ? [] : ACCESS.map(([what, label, tip]) => pill(label, tip, want[what], (c) => { want[what] = c.checked; })))];
-    const msg = el("span", { class: "hint" }, note || "");
-    const add = el("button", { class: "primary", onclick: async () => {
-      const addr = email.value.trim().toLowerCase();
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { msg.textContent = "That does not look like an email address."; return; }
-      add.disabled = true; msg.textContent = "Adding…";
-      try { await rpc("stream_admin_add_user", { p_email: addr, p_note: name.value.trim() || null, p_admin: want.admin });
-        if (hasAcc) for (const [what] of ACCESS) if (want[what] !== (what === "general")) await rpc("stream_admin_set_access", { p_email: addr, p_what: what, p_on: want[what] });
-        refreshAdmin(`${addr} added.`); }
-      catch (e) { add.disabled = false; msg.textContent = "Could not add: " + (e.message || e); }
-    } }, "Add");
-    email.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); });
-    box.append(el("div", { class: "uadd" }, el("h3", {}, "Add a person"), el("div", { class: "uaddf" }, email, name), el("div", { class: "upills" }, ...newPills),
-        el("div", { class: "uaddf" }, add, msg)),
-      el("p", { class: "hint", style: "margin:12px 0 0" },
-        hasAcc ? "General = Now, History, Greetings, Ministers, Hymns, Bible, Copyright and Viewers (and switching a service to run by hand). Announcements = the Announcements tab and the weekly email. Thoughts = the Thoughts tab. " : "Everyone on the list sees the status and may switch a service to run by hand. ",
-        "Admin = also Process Map, Tests and Admin. A button saves as soon as it is clicked. This list is separate from the HVAC page's list."));
-  } catch (e) { box.replaceChildren(el("b", {}, "Could not load the list: "), String(e.message || e)); }
+  const hasAcc = !demo ? rows.some(u => "general" in u) : true;
+  const ROLES = [["admin", "Admin", "Also sees Process Map, Tests and Admin, and manages this list"],
+    ...(hasAcc ? [["general", "General", "Now, History, Ministers, Bible, Viewers, Hymns, Copyright, Greetings"], ["announcements", "Announcements", "The Announcements tab and the weekly email"],
+      ["thoughts", "Thoughts", "The Thoughts tab (questions on what was read and preached)"]] : [])];
+  const mineKey = { general: "general", announcements: "annOk", thoughts: "thoughts" };
+  const has = (u, k) => !!(k === "admin" ? u.is_admin : u[k]);
+  const nameOf = (u) => (u.note || u.email).toLowerCase();
+  const saveRole = async (u, k, label, c) => { c.disabled = true;
+    try {
+      if (k === "admin") await rpc("stream_admin_add_user", { p_email: u.email, p_note: u.note || null, p_admin: c.checked });
+      else { await rpc("stream_admin_set_access", { p_email: u.email, p_what: k, p_on: c.checked }); if (u.email.toLowerCase() === me) { state[mineKey[k]] = c.checked; renderTabs(); } }
+      refreshAdmin(`${u.note || u.email}: ${label} ${c.checked ? "on" : "off"}.`);
+    } catch (e) { refreshAdmin("Could not save: " + (e.message || e)); } };
+  // the name and the buttons of each person (kept, so Edit name can change them in place)
+  const parts = new Map(rows.map(u => {
+    const self = u.email.toLowerCase() === me;
+    const who = el("div", { class: "uwho" }, el("div", { class: "uname" }, u.note || u.email, self ? el("span", { class: "hint" }, " (you)") : null),
+      u.note ? el("div", { class: "umail" }, u.email) : null);
+    const rm = el("button", { class: "small danger", title: self ? "You cannot remove yourself" : "Remove " + u.email }, "Remove");
+    if (self) rm.disabled = true;
+    const edit = el("button", { class: "small", title: "Change the name" }, "Edit name");
+    const act = el("div", { class: "uact" }, edit, rm);
+    rm.onclick = (e) => { e.stopPropagation();
+      const yes = el("button", { class: "small danger", onclick: async () => { yes.disabled = true;
+        try { await rpc("stream_admin_remove_user", { p_email: u.email }); refreshAdmin(`${u.email} removed.`); } catch (er) { refreshAdmin("Could not remove: " + (er.message || er)); } } }, "Really remove?");
+      act.replaceChildren(yes, el("button", { class: "small", onclick: () => act.replaceChildren(edit, rm) }, "Cancel")); };
+    edit.onclick = () => {
+      const nameIn = el("input", { type: "text", value: u.note || "", placeholder: "name", style: "width:180px;max-width:100%;padding:6px 8px;font-size:16px" });
+      const save = el("button", { class: "small primary", onclick: async () => { save.disabled = true;
+        try { await rpc("stream_admin_add_user", { p_email: u.email, p_note: nameIn.value.trim() || null, p_admin: !!u.is_admin }); refreshAdmin(`${u.email} updated.`); }
+        catch (er) { refreshAdmin("Could not save: " + (er.message || er)); } } }, "Save");
+      const cancel = el("button", { class: "small", onclick: () => refreshAdmin() }, "Cancel");
+      nameIn.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); if (e.key === "Escape") cancel.click(); });
+      who.replaceChildren(nameIn, el("div", { class: "umail" }, u.email)); act.replaceChildren(save, cancel); nameIn.focus(); };
+    return [u.email, { who, act }];
+  }));
+  const box2 = (u, k, label) => {
+    const self = u.email.toLowerCase() === me, locked = k === "admin" && self;
+    const c = el("input", { type: "checkbox", class: "ubox", title: locked ? "You cannot take admin away from yourself" : `${label} for ${u.note || u.email}` });
+    c.checked = has(u, k); if (locked) c.disabled = true;
+    c.onchange = () => saveRole(u, k, label, c);
+    return c;
+  };
+  box.replaceChildren(el("h2", {}, `Who may sign in · ${rows.length}`),
+    note ? el("p", { class: "hint", style: "margin:0 0 6px" }, note) : null,
+    sortTable("admin", [
+      { key: "name", label: "Name", val: r => nameOf(r), cell: r => parts.get(r.email).who },
+      ...ROLES.map(([k, label, tip]) => ({ key: k, label, val: r => has(r, k) ? 1 : 0, num: true, cls: "ctr", cell: r => box2(r, k, label), tip })),
+      { key: "added", label: "Added", val: r => String(r.added_at || ""), num: true, nowrap: true, cell: r => r.added_at ? fmtShortDay(new Date(r.added_at)) : "",
+        tip: "When the person was put on the list" },
+      { key: "act", label: " ", val: r => nameOf(r), cell: r => parts.get(r.email).act },
+    ], rows, { key: "name", dir: "asc" }, 1000, { tableCls: "utable" }));
+  // add a person: email, name and the same boxes (a new person starts with General only)
+  const email = el("input", { type: "text", placeholder: "email address (Google account)", autocomplete: "off" });
+  const name = el("input", { type: "text", placeholder: "name", autocomplete: "off" });
+  const want = { admin: false, general: true, announcements: false, thoughts: false };
+  const newBoxes = ROLES.map(([k, label, tip]) => { const c = el("input", { type: "checkbox", class: "ubox" }); c.checked = want[k]; c.onchange = () => { want[k] = c.checked; };
+    return el("label", { class: "chk", title: tip }, c, " " + label); });
+  const msg = el("span", { class: "hint" });
+  const add = el("button", { class: "primary", onclick: async () => {
+    const addr = email.value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { msg.textContent = "That does not look like an email address."; return; }
+    add.disabled = true; msg.textContent = "Adding…";
+    try { await rpc("stream_admin_add_user", { p_email: addr, p_note: name.value.trim() || null, p_admin: want.admin });
+      if (hasAcc) for (const [k] of ROLES) if (k !== "admin" && want[k] !== (k === "general")) await rpc("stream_admin_set_access", { p_email: addr, p_what: k, p_on: want[k] });
+      refreshAdmin(`${addr} added.`); }
+    catch (e) { add.disabled = false; msg.textContent = "Could not add: " + (e.message || e); }
+  } }, "Add");
+  email.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); });
+  box.append(el("div", { class: "uadd" }, el("h3", {}, "Add a person"), el("div", { class: "uaddf" }, email, name),
+      el("div", { class: "uaddf" }, ...newBoxes), el("div", { class: "uaddf" }, add, msg)),
+    el("p", { class: "hint", style: "margin:12px 0 0" },
+      hasAcc ? "General = Now, History, Ministers, Bible, Viewers, Hymns, Copyright and Greetings (and switching a service to run by hand). Announcements = the Announcements tab and the weekly email. Thoughts = the Thoughts tab. " : "Everyone on the list sees the status and may switch a service to run by hand. ",
+      "Admin = also Process Map, Tests and Admin. A box saves as soon as it is clicked. Click a heading to sort. This list is separate from the HVAC page's list."));
 }
 
 // ------------------------------------------------------------------ refresh loop: every 5 s while something runs, else 20 s
