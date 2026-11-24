@@ -368,7 +368,8 @@
 // Status of the automatic Sunday / Wednesday stream at the church (Russ, 2026-11-09).
 //   Now      the service happening now (or the latest) as 12 numbered steps, what comes next, "Run by hand".
 //   History  every service: date, result (pass / fail), minister, readings; a row opens to its steps and hymns.
-//   Tests    an admin starts a TEST of a past service (quick replay or full re-check) and watches it run.
+//   Tests    an admin starts a TEST of a past service (quick replay or full re-check) or the systems check of the
+//            church PC (Test-System.ps1, mode 'system', 2026-11-23) and watches it run.
 //   Admin    who may sign in (admins only), the same way as on the HVAC page.
 // Data: Supabase (the HVAC page's project), tables stream_* (supabase\stream_status*.sql), written by the
 // church PC's scripts (Common.psm1 Set-MnStep). The page's own allow list is stream_allowed_users.
@@ -640,6 +641,7 @@ function facts(run) {
 // Full detail of one run: the 12 steps, then the minister / readings and the hymns under them
 // (Russ, 2026-11-09: side by side with the steps was messy)
 function runDetail(run) {
+  if (run.service_id === "TestSystem") return el("div", { class: "stack" }, el("h4", {}, "Steps"), stepList(run));   // no minister / hymns in a systems check
   return el("div", { class: "stack" }, topBox(run),
     el("h4", {}, "Steps"), stepList(run),
     el("h4", {}, "Service"), facts(run),
@@ -2017,7 +2019,7 @@ function renderHistory() {
 // What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
-const MAP_UPDATED = "2026-11-22";
+const MAP_UPDATED = "2026-11-23";
 // The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
 // stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
 function processSvg(K, svcs, t, short) {
@@ -2151,7 +2153,7 @@ function renderProcessMap() {
         el("div", { class: "pm-steps one" },
           step(null, "Status page", "Every minute the PC tells this page it is on and picks up any change made here.", ["This page"]),
           step(null, "Numbers for the tabs", "Once a day: AC Central's sermon list since 2015, the hymns and the viewer counts from Vimeo and Radio Mast, for Ministers, Hymns, Bible, Copyright and Viewers.", ["AC Central", "Vimeo", "Radio Mast"]),
-          step(null, "Tests", "An admin can rehearse a past service from the Tests tab; nothing is published.", ["Tests tab"]))),
+          step(null, "Tests", "An admin can rehearse a past service from the Tests tab, or run the systems check: the PC checks its tasks and whether they fire for the next service, its programs, mic and camera, secrets, internet, Vimeo sign-in, mixer, disk and clock. Nothing is published.", ["Tests tab"]))),
       el("section", { class: "card" }, el("h2", {}, "When a person steps in"),
         el("div", { class: "pm-steps one" },
           step(null, "Run by hand", "For a wedding, funeral or special program, set the service to run by hand on the Now tab; the PC leaves it alone.", ["Now tab"], "hand"),
@@ -2177,21 +2179,34 @@ function renderTests() {
       el("div", {}, el("b", {}, title), el("span", {}, text)));
     const start = el("button", { class: "big primary", disabled: !!live || !sources.length || state.busy, onclick: async () => {
       state.busy = true; state.testMsg = null; render();
-      try { await rpc("stream_request_test", { p_source_key: state.testSource, p_mode: state.testMode }); await load(); state.testMsg = { ok: true, text: "Asked. The church PC picks it up within a minute; watch it below." }; }
-      catch (e) { state.testMsg = { ok: false, text: "Could not start: " + (e.message || e) }; }
+      try { await rpc("stream_request_test", { p_source_key: state.testSource, p_mode: state.testMode }); await load(); state.testMsg = { ok: true, past: true, text: "Asked. The church PC picks it up within a minute; watch it below." }; }
+      catch (e) { state.testMsg = { ok: false, past: true, text: "Could not start: " + (e.message || e) }; }
       state.busy = false; render(); refresh();   // refresh() switches to the 5-second rhythm while the test waits or runs
     } }, live ? "A test is already waiting or running" : "Start the test");
+    // Systems check (Russ, 2026-11-23): the church PC checks itself, read-only; first card, above the past-service test
+    const sysStart = el("button", { class: "big primary", disabled: !!live || state.busy, onclick: async () => {
+      state.busy = true; state.testMsg = null; render();
+      try { await rpc("stream_request_test", { p_source_key: "system", p_mode: "system" }); await load(); state.testMsg = { ok: true, text: "Asked. The church PC picks it up within a minute; watch it below." }; }
+      catch (e) { state.testMsg = { ok: false, text: "Could not start: " + (e.message || e) }; }
+      state.busy = false; render(); refresh();
+    } }, live ? "A test is already waiting or running" : "Run the systems check");
+    form.push(el("section", { class: "card" }, el("h2", {}, "Systems check"),
+      el("div", { class: "testform" },
+        el("p", { style: "margin:0" }, "The church PC checks itself in about 2 minutes: the scheduled tasks and whether they fire for the ", el("b", {}, "next service"),
+          ", the status page watcher, OBS, Rocket Broadcaster and the other programs, the Sanctuary microphone and camera, settings and secrets, the internet services (Vimeo, AC Central, Radio Mast, phone alerts), the AC Central API, the Vimeo sign-in, the mixer, disk space, the clock, and a rehearsal of the next start."),
+        el("div", { class: "hint" }, "Read-only: nothing is launched, published or changed. Run it after a restart or a Windows update, or before a special service."),
+        sysStart, state.testMsg && !state.testMsg.past ? el("div", { class: "msg " + (state.testMsg.ok ? "ok" : "bad") }, state.testMsg.text) : null)));
     form.push(el("section", { class: "card" }, el("h2", {}, "Test a past service"),
       el("div", { class: "testform" },
         el("div", {}, el("div", { class: "hint", style: "margin-bottom:4px" }, "Service"), sel),
         opt("quick", "Quick test · about 1 minute", "Replays that service step by step from its records, and judges its health check again with today's rules."),
         opt("full", "Full test · about 25 minutes the first time, 2 after", "Runs the speaker, readings and hymns analysis again on the original recording, checks the Vimeo sign-in and finds the published video, fills the AC Central form without saving, and checks the Google Sheet connection."),
         el("div", { class: "hint" }, "Nothing is published, uploaded, emailed or changed. A test waits while it is service time."),
-        start, state.testMsg ? el("div", { class: "msg " + (state.testMsg.ok ? "ok" : "bad") }, state.testMsg.text) : null)));
+        start, state.testMsg && state.testMsg.past ? el("div", { class: "msg " + (state.testMsg.ok ? "ok" : "bad") }, state.testMsg.text) : null)));
   }
   if (live) {
     const src = state.runs.find(r => r.run_key === live.source_key);
-    const what = `${live.mode === "full" ? "Full" : "Quick"} test of ${src ? src.service_name + ", " + fmtShortDay(parseYmd(src.run_date)) : live.source_key}`;
+    const what = live.mode === "system" ? "Systems check of the church PC" : `${live.mode === "full" ? "Full" : "Quick"} test of ${src ? src.service_name + ", " + fmtShortDay(parseYmd(src.run_date)) : live.source_key}`;
     const box = el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, live.status === "pending" ? "Waiting for the church PC: " : "Running: "), what,
       ` (asked by ${live.requested_by} ${ago(new Date(live.requested_at))}). `, live.note ? live.note + " " : "",
       live.status === "pending" && !live.note ? "The PC checks every minute. " : "");
@@ -2211,7 +2226,7 @@ function renderTests() {
     const t = el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Asked"), el("th", {}, "Test"), el("th", {}, "By"), el("th", {}, "Result"))));
     const b = el("tbody");
     for (const q of done) b.append(el("tr", {}, el("td", { class: "date" }, fmtShortDay(new Date(q.requested_at)) + " " + fmtTime(new Date(q.requested_at))),
-      el("td", {}, `${q.mode} · ${q.source_key}`), el("td", {}, q.requested_by), el("td", {}, `${q.status}${q.note ? ": " + q.note : ""}`)));
+      el("td", {}, q.mode === "system" ? "systems check" : `${q.mode} · ${q.source_key}`), el("td", {}, q.requested_by), el("td", {}, `${q.status}${q.note ? ": " + q.note : ""}`)));
     t.append(b); kids.push(el("section", { class: "card" }, el("h2", {}, "Test requests"), el("div", { class: "tablewrap" }, t)));
   }
   screen(...kids);
@@ -3003,8 +3018,25 @@ async function demoLoad() {
         const an = r.steps.find(s => s.key === "analysis"); Object.assign(an, { status: "running", detail: "Listening to the recording for the minister, readings and hymns; this takes about 15 to 20 minutes.", at: new Date().toISOString() }); }
       return; }
     const q = state.requests.find(x => x.status === "pending" || x.status === "running"); if (!q) return;
-    const src = state.runs.find(r => r.run_key === q.source_key);
     let tr = state.tests.find(x => x.run_key === q.test_key);
+    if (q.mode === "system") {   // the systems check (Test-System.ps1): its own 13 steps, all fine in the demo
+      const SYS = [["tasks", "Scheduled tasks registered", "All 4 tasks are registered and enabled (Start, Check, Stop, Requests)."], ["nextservice", "Next service: start, check and stop are scheduled", "Next service: Sunday AM on Sunday, November 29 (9:57 AM start, 10:03 AM check, 11:25 AM cutoff). Start, Check and Stop all fire at those times."],
+        ["watcher", "Status page watcher running every minute", "The Requests task runs every minute (last 0.4 min ago, result OK)."], ["programs", "OBS, Rocket Broadcaster, Node, Python and ffmpeg found", "All found. OBS WebSocket on port 4455."],
+        ["devices", "Sanctuary microphone and camera present", "Mic 'Echo Cancelling Speakerphone (Sanctuary)' is active; camera 'Sanctuary' present."], ["settings", "Settings, schedule and secrets", "settings.json and schedule.json read fine (3 services enabled); all 9 secrets are stored."],
+        ["network", "Internet: Vimeo, AC Central, Radio Mast, ntfy, status page", "All 8 answer."], ["accentral", "AC Central API answers", "AC Central API answers (0 congregations streaming right now); Morris North is not listed, which is right outside a service."],
+        ["vimeo", "Vimeo sign-in", "Vimeo sign-in OK (already signed in)."], ["mixer", "Sanctuary mixer answers", "The mixer answers at 192.168.1.8: AUXILIARY is at 0 dB, unmuted. Nothing was changed."],
+        ["disk", "Disk space and recordings folder", "1420 GB free on C: (a service needs about 5 GB); the recordings folder is writable."], ["clock", "Clock in sync", "Clock within 0.5 s of the internet time."],
+        ["dryrun", "Start rehearsed for the next service (nothing launched)", "Rehearsed the start of Sunday AM: mic found, Rocket's audio device right, OBS and Rocket would be launched and the stream started."]];
+      if (!tr) { tr = { run_key: q.test_key, run_date: ymd(new Date()), service_id: "TestSystem", service_name: "TEST: Systems check", is_test: true,
+        steps: SYS.map(([key, label]) => ({ key, label, status: "pending", detail: "", at: null })), summary: {} }; state.tests.unshift(tr); q.status = "running"; }
+      const i = tr.steps.findIndex(s => s.status === "pending" || s.status === "running");
+      if (i < 0) { q.status = "done"; q.note = "Systems check passed"; return; }
+      const s = tr.steps[i];
+      if (s.status === "pending") { s.status = "running"; s.detail = "Checking…"; s.at = new Date().toISOString(); }
+      else { s.status = "ok"; s.detail = SYS[i][2]; s.at = new Date().toISOString(); }
+      return;
+    }
+    const src = state.runs.find(r => r.run_key === q.source_key);
     if (!tr) { tr = { run_key: q.test_key, run_date: ymd(new Date()), service_id: "Test" + src.service_id, service_name: `TEST: ${src.service_name} of Nov 8`, is_test: true,
       steps: src.steps.map(s => ({ ...s, status: "pending", detail: "", at: null })), summary: src.summary }; state.tests.unshift(tr); q.status = "running"; }
     const i = tr.steps.findIndex(s => s.status === "pending" || s.status === "running");
@@ -3017,7 +3049,7 @@ async function demoLoad() {
 function demoRpc(fn, a) {
   if (fn === "stream_set_manual") { if (a.p_manual) state.control.set(a.p_run_key, { run_key: a.p_run_key, note: a.p_note, set_by: "demo@example.org", set_at: new Date().toISOString() }); else state.control.delete(a.p_run_key); return; }
   if (fn === "stream_request_test") { if (state.requests.some(q => q.status === "pending" || q.status === "running")) throw new Error("A test is already waiting or running");
-    state.requests.unshift({ id: Date.now(), source_key: a.p_source_key, mode: a.p_mode, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString(), test_key: `${ymd(new Date())}_Test${a.p_source_key.slice(11)}` }); return 1; }
+    state.requests.unshift({ id: Date.now(), source_key: a.p_source_key, mode: a.p_mode, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString(), test_key: a.p_mode === "system" ? `${ymd(new Date())}_TestSystem` : `${ymd(new Date())}_Test${a.p_source_key.slice(11)}` }); return 1; }
   if (fn === "stream_request_stop") { if (!state.stops.some(x => x.run_key === a.p_run_key && x.status === "pending"))
       state.stops.unshift({ id: Date.now(), run_key: a.p_run_key, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString() }); return 1; }
   if (fn === "stream_cancel_request") { const q = state.requests.find(x => x.id === a.p_id); if (q) q.status = "cancelled"; return; }
