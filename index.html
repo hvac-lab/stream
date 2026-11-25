@@ -52,7 +52,7 @@
   nav.tabs button.on { background: var(--page); border-color: var(--border); color: var(--ink); font-weight: 650; margin-bottom: -1px; }
   nav.tabs button .live { display:inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--s1); margin-left: 6px; vertical-align: middle; animation: blink 1.2s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: .25; } }
-  button, input[type=text], select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
+  button, input[type=text], input[type=time], select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
   button { cursor: pointer; touch-action: manipulation; } button:hover { background: var(--hover); } button:disabled { opacity: .5; cursor: default; }
   button.google { display:inline-flex; align-items:center; gap:10px; padding: 10px 18px; font-weight: 600; font-size: 16px; }
   button.google svg { width: 20px; height: 20px; }
@@ -64,6 +64,17 @@
   .confirm.stop { border-color: var(--critical); background: var(--badbg); }
   .banner.stop { border-color: var(--critical); background: var(--badbg); }
   button.yes { background: var(--warning); border-color: transparent; color: #fff; }
+  /* "Start a service now" (Now tab, top right; 2026-11-25) */
+  .nowbar { display:flex; justify-content:flex-end; margin: 0 0 12px; }
+  button.start { border: 2px solid var(--s1); color: var(--s1); font-weight: 600; padding: 6px 14px; }
+  button.yes.start { background: var(--s1); color: #fff; }
+  .confirm.start { border-color: var(--s1); background: var(--band); }
+  .confirm.start label.f { display:block; font-size: 13px; color: var(--ink-2); margin: 8px 0 3px; }
+  .confirm.start select, .confirm.start input[type=time] { font-size: 16px; padding: 8px 10px; }
+  .confirm.start .opts { display:grid; gap: 8px; margin: 4px 0 12px; }
+  .confirm.start label.opt { display:flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; background: var(--surface); }
+  .confirm.start label.opt.on { border-color: var(--s1); } .confirm.start label.opt input { margin-top: 3px; } .confirm.start label.opt span { font-size: 13px; color: var(--ink-2); display:block; }
+  .banner.start { border-color: var(--s1); background: var(--band); margin-top: 0; }
   button.primary { background: var(--s1); color: #fff; border-color: transparent; font-weight: 600; }
   button.small { padding: 3px 10px; font-size: 13px; } button.danger { color: var(--critical); }
   main { padding: 16px; max-width: 980px; margin: 0 auto; min-height: 100vh; box-sizing: border-box; }   /* tall enough to keep the tab row at the top */
@@ -366,7 +377,8 @@
 (() => {
 "use strict";
 // Status of the automatic Sunday / Wednesday stream at the church (Russ, 2026-11-09).
-//   Now      the service happening now (or the latest) as 12 numbered steps, what comes next, "Run by hand".
+//   Now      the service happening now (or the latest) as 12 numbered steps, what comes next, "Run by hand";
+//            top right "Start a service now" for an unscheduled service such as a funeral (2026-11-25).
 //   History  every service: date, result (pass / fail), minister, readings; a row opens to its steps and hymns.
 //   Tests    an admin starts a TEST of a past service (quick replay or full re-check) or the systems check of the
 //            church PC (Test-System.ps1, mode 'system', 2026-11-23) and watches it run.
@@ -555,17 +567,19 @@ async function load() {
   if (demo) { await demoLoad(); return; }
   const sb = state.sb;
   const cols = "run_key,run_date,service_id,service_name,steps,summary,is_test,updated_at";
-  const [runs, tests, ctl, meta, req, stopReq] = await Promise.all([
+  const [runs, tests, ctl, meta, req, stopReq, startReq] = await Promise.all([
     sb.from("stream_runs").select(cols).eq("is_test", false).order("run_date", { ascending: false }).order("run_key", { ascending: false }).limit(200),
     sb.from("stream_runs").select(cols).eq("is_test", true).order("updated_at", { ascending: false }).limit(10),
     sb.from("stream_control").select("run_key,note,set_by,set_at"),
     sb.from("stream_meta").select("key,value"),
     sb.from("stream_requests").select("*").order("id", { ascending: false }).limit(10),
     sb.from("stream_stop_requests").select("*").order("id", { ascending: false }).limit(10),
+    sb.from("stream_start_requests").select("*").order("id", { ascending: false }).limit(5),
   ]);
   for (const r of [runs, tests, ctl, meta, req]) if (r.error) throw new Error(r.error.message);
   state.runs = runs.data || []; state.tests = tests.data || []; state.requests = req.data || [];
   state.stops = stopReq.error ? [] : (stopReq.data || []);   // stream_status_6.sql; a missing table just hides the button's history
+  state.starts = startReq.error ? null : (startReq.data || []);   // stream_status_13.sql; null = not set up yet (no Start button)
   state.control = new Map((ctl.data || []).map(c => [c.run_key, c]));
   const m = Object.fromEntries((meta.data || []).map(x => [x.key, x.value]));
   state.schedule = m.schedule || null;
@@ -708,10 +722,12 @@ function stopControl(run) {
     // the other two ways (Russ, 2026-11-15: the walk-off, the button and the cutoff)
     const svc = (state.schedule?.services || []).find(s => s.id === run.service_id);
     const wf = svc?.walkoffFrom;   // settings.json walkoff.watchFrom, sent by the church PC with the schedule
-    const cut = svc ? fmtTime(atTime(new Date(), svc.cutoff)) : "the cutoff";
+    // a service started from the status page stops at the time chosen then (stream_start_requests.stop_at)
+    const sr = run.service_id === "Special" ? (state.starts || []).find(q => q.run_key === run.run_key && q.status === "done") : null;
+    const cut = sr ? fmtTime(new Date(sr.stop_at)) : svc ? fmtTime(atTime(new Date(), svc.cutoff)) : "the cutoff";
     box.append(el("p", { class: "hint", style: "margin:6px 0 0" }, wf
       ? `Otherwise the PC stops it by itself 5 minutes after the ministers walk off the platform (it watches from ${fmtTime(atTime(new Date(), wf))}), or at ${cut} at the latest.`
-      : `Otherwise the PC stops it at ${cut}.`));
+      : sr ? `Otherwise the PC stops it at ${cut}, the time chosen at the start.` : `Otherwise the PC stops it at ${cut}.`));
   }
   if (state.stopMsg && state.stopMsg.key === key) box.append(el("div", { class: "msg " + (state.stopMsg.ok ? "ok" : "bad") }, state.stopMsg.text));
   return box;
@@ -721,6 +737,82 @@ async function askStop(key) {
   try { await rpc("stream_request_stop", { p_run_key: key }); await load(); }
   catch (e) { state.stopMsg = { key, ok: false, text: "Could not ask for the stop: " + (e.message || e) }; }
   state.busy = false; state.askingStop = null; render();
+}
+
+// "Start a service now" (Russ, 2026-11-25: "a button on the top right that can manually start the automation auto video
+// of a service. Example, for a unscheduled funeral. It would not touch the mixer, so more like a Wed night. Include
+// options to stop it at the end of the service also"). Anyone on the list, like the Stop button. The page asks through
+// stream_request_start() (name, AC Central type, stop time, upload or keep local); within a minute the church PC
+// (Watch-Requests.ps1) runs Start-Service.ps1 -Service Special, the health check 6 minutes in, and Stop-Service at the
+// stop time; "Service is over" on the run's card stops it earlier. The mixer steps and the walk-off watch are Sunday /
+// scheduled-service things and are not run for it.
+const START_TYPES = [["Funeral", "Funeral"], ["Wedding", "Wedding"], ["Special Event", "Special service or program"], ["Singing", "Singing"], ["Topical", "Topical (Bible study, presentation)"]];
+const roundUp5 = (d) => { const r = new Date(d); r.setSeconds(0, 0); r.setMinutes(Math.ceil(r.getMinutes() / 5) * 5); return r; };
+const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function startControl() {
+  if (state.starts === null || state.starts === undefined) return null;   // table not set up yet (stream_status_13.sql)
+  const today = ymd(new Date());
+  const live = state.runs.some(r => r.run_date === today && overall(r).cls === "running" && ["pending", "running"].includes(stepOf(r, "stop").status));
+  const last = (state.starts || [])[0];
+  const at = (q) => fmtTime(new Date(q.requested_at));
+  const box = el("div", { class: "nowbar" });
+  if (last && last.status === "pending") {
+    const recent = Date.now() - new Date(last.requested_at) < 20 * 60e3;
+    box.append(el("div", { class: "banner start", style: "width:100%" }, el("b", {}, "Start asked. "),
+      `${last.requested_by} at ${at(last)}: "${last.title}" (${(START_TYPES.find(t => t[0] === last.service_type) || [,last.service_type])[1]}), stop at ${fmtTime(new Date(last.stop_at))}${last.publish ? "" : ", recording kept on the PC"}. `,
+      recent ? "The church PC starts OBS and Rocket Broadcaster within a minute; the service then shows below as “Now”." : "The church PC has not picked it up (is it on?). ",
+      el("button", { class: "small", style: "margin-left:8px", disabled: state.busy, onclick: () => cancelStart(last.id) }, "Cancel")));
+    if (state.startMsg) box.append(el("div", { class: "msg bad" }, state.startMsg));
+    return box;
+  }
+  if (live) return null;   // one stream at a time: the Stop button is on the card
+  if (state.askingStart) {
+    const f = state.startForm || (state.startForm = { title: "", type: "Funeral", stop: hhmm(roundUp5(new Date(Date.now() + 2 * 3600e3))), publish: true });
+    const title = el("input", { type: "text", placeholder: "e.g. Funeral of John Doe", value: f.title, oninput: (e) => { f.title = e.target.value; } });
+    const type = el("select", { onchange: (e) => { f.type = e.target.value; } }, ...START_TYPES.map(([v, t]) => { const o = el("option", { value: v }, t); if (v === f.type) o.selected = true; return o; }));
+    const stop = el("input", { type: "time", value: f.stop, step: "300", onchange: (e) => { f.stop = e.target.value; } });
+    const opt = (v, title, text) => el("label", { class: "opt" + (f.publish === v ? " on" : "") },
+      el("input", { type: "radio", name: "pub", checked: f.publish === v ? "checked" : null, onchange: () => { f.publish = v; render(); } }), el("div", {}, el("b", {}, title), el("span", {}, text)));
+    const form = el("div", { class: "confirm start", style: "width:100%" }, el("p", { class: "sure" }, "Start a service now"),
+      el("p", {}, "For a service that is not on the schedule, such as a funeral. Like a Wednesday evening: OBS and Rocket Broadcaster start, the video and the radio audio are live on AC Central for everyone within about a minute, the PC checks them 6 minutes in; the Sanctuary mixer is not touched."),
+      el("label", { class: "f" }, "Name of the service (AC Central title, Vimeo title)"), title,
+      el("label", { class: "f" }, "Kind (AC Central Service/Day)"), type,
+      el("label", { class: "f" }, "Stop the stream at"), stop,
+      el("p", { class: "hint", style: "margin:4px 0 10px" }, "The PC stops it at this time. To stop earlier, press “Service is over: stop the stream now” on the card below once it is running (or Stop Stream Now on the PC)."),
+      el("div", { class: "opts" },
+        opt(true, "Afterwards, as usual", "Minister, readings and hymns found, recording trimmed, video uploaded to Vimeo, sermon entered on AC Central, Google Sheet, report."),
+        opt(false, "Keep the recording on the church PC only", "Analyzed and trimmed, but nothing uploaded to Vimeo, entered on AC Central or added to the sheet.")),
+      el("div", { class: "row" },
+        el("button", { class: "yes start", disabled: state.busy, onclick: () => askStart(f) }, "Yes, start the stream now"),
+        el("button", { onclick: () => { state.askingStart = false; state.startMsg = null; render(); } }, "Cancel")));
+    if (state.startMsg) form.append(el("div", { class: "msg bad" }, state.startMsg));
+    box.append(form);
+    return box;
+  }
+  box.append(el("button", { class: "start", disabled: state.busy, onclick: () => { state.askingStart = true; state.startMsg = null; render(); } }, "Start a service now"));
+  // the last request's outcome, for an hour (a start the PC refused, or one cancelled)
+  if (last && last.status === "failed" && Date.now() - new Date(last.handled_at || last.requested_at) < 3600e3)
+    box.append(el("div", { class: "msg bad", style: "width:100%;text-align:right;margin:4px 0 0" }, `Last start request: ${last.note || "not carried out"}`));
+  return box;
+}
+async function askStart(f) {
+  const now = new Date();
+  let stopAt = atTime(now, f.stop || "00:00");
+  if (stopAt < now) stopAt.setDate(stopAt.getDate() + 1);   // past midnight
+  const minAhead = (stopAt - now) / 60e3;
+  if (!(f.title || "").trim()) { state.startMsg = "Give the service a name, e.g. Funeral of John Doe."; render(); return; }
+  if (minAhead < 5) { state.startMsg = "The stop time must be at least 5 minutes from now."; render(); return; }
+  if (minAhead > 8 * 60) { state.startMsg = "The stop time must be within 8 hours."; render(); return; }
+  state.busy = true; state.startMsg = null; render();
+  try { await rpc("stream_request_start", { p_title: f.title.trim(), p_type: f.type, p_stop_at: stopAt.toISOString(), p_publish: !!f.publish }); await load(); state.askingStart = false; state.startForm = null; }
+  catch (e) { state.startMsg = "Could not ask for the start: " + (e.message || e); }
+  state.busy = false; render();
+}
+async function cancelStart(id) {
+  state.busy = true; state.startMsg = null; render();
+  try { await rpc("stream_cancel_start", { p_id: id }); await load(); }
+  catch (e) { state.startMsg = "Could not cancel it: " + (e.message || e); }
+  state.busy = false; render();
 }
 
 function runCard(run, title, opts = {}) {
@@ -735,7 +827,7 @@ function runCard(run, title, opts = {}) {
     opts.detail ? runDetail(run) : topBox(run), opts.detail ? null : stepList(run));
   if (!run.is_test) {
     const stopStep = stepOf(run, "stop");
-    const live = o.cls === "running" && stopStep.status === "pending" && run.service_id !== "Special";
+    const live = o.cls === "running" && stopStep.status === "pending";   // a Special service started from the page too (2026-11-25)
     // the stop button only while the stream is on (step 2 done) and the service runs automatically
     if (live && !state.control.has(run.run_key) && ["ok", "warning"].includes(stepOf(run, "video").status) && run.run_date === ymd(new Date())) card.append(stopControl(run));
     if (live) card.append(manualControl(run.run_key, svc, true));
@@ -1015,6 +1107,8 @@ function mixerCard() {
 function renderNow() {
   const kids = [];
   const runs = state.runs;
+  const sc = startControl();   // top right: "Start a service now" (2026-11-25)
+  if (sc) kids.push(sc);
   const lc = liveCard();
   if (lc) kids.push(lc);
   const current = runs.find(r => overall(r).cls === "running") || runs[0];
@@ -2019,7 +2113,7 @@ function renderHistory() {
 // What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
-const MAP_UPDATED = "2026-11-23";
+const MAP_UPDATED = "2026-11-25";
 // The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
 // stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
 function processSvg(K, svcs, t, short) {
@@ -2119,7 +2213,7 @@ function renderProcessMap() {
       el("p", { class: "hint", style: "margin:6px 0 0" }, "Numbers match the steps below and the 12 steps on the Now tab. Dashed: the stream keeps going after an alert.")),
     el("section", { class: "card" }, el("h2", {}, "Step by step"),
       phase("Before", ["3 minutes before the service", ...list("start")],
-        step(1, "Automatic start", "A scheduled task on the church PC starts the service. It checks the Sanctuary camera, mic and internet first.", ["Windows scheduler"]),
+        step(1, "Automatic start", "A scheduled task on the church PC starts the service. It checks the Sanctuary camera, mic and internet first. An unscheduled service (a funeral) is started the same way from the Now tab's “Start a service now”.", ["Windows scheduler", "Now tab"]),
         step(2, "Video streaming", "OBS starts the live video to the Vimeo live event behind AC Central's player.", ["OBS", "Vimeo"]),
         step(3, "Recording", "OBS records the full-quality video at the same time, for the archive.", ["OBS"]),
         step(4, "Audio streaming", "The PC starts Rocket Broadcaster at the same time; it sends the sound to Radio Mast.", ["Rocket Broadcaster", "Radio Mast"])),
@@ -2156,7 +2250,8 @@ function renderProcessMap() {
           step(null, "Tests", "An admin can rehearse a past service from the Tests tab, or run the systems check: the PC checks its tasks and whether they fire for the next service, its programs, mic and camera, secrets, internet, Vimeo sign-in, mixer, disk and clock. Nothing is published.", ["Tests tab"]))),
       el("section", { class: "card" }, el("h2", {}, "When a person steps in"),
         el("div", { class: "pm-steps one" },
-          step(null, "Run by hand", "For a wedding, funeral or special program, set the service to run by hand on the Now tab; the PC leaves it alone.", ["Now tab"], "hand"),
+          step(null, "Start a service now", "For a service that is not on the schedule, such as a funeral: press “Start a service now” top right on the Now tab, give its name and kind (AC Central Service/Day), the stop time, and whether to upload afterwards or keep the recording on the PC. Within a minute the PC starts OBS and Rocket Broadcaster, checks them 6 minutes in, and stops at the set time or when “Service is over” is pressed; then steps 7 to 12 as usual. Like a Wednesday evening: the Sanctuary mixer is not touched.", ["Now tab", "OBS", "Rocket Broadcaster"], "hand"),
+          step(null, "Run by hand", "To stream a scheduled service yourself (a wedding or special program in its place), set it to run by hand on the Now tab; the PC leaves it alone.", ["Now tab"], "hand"),
           step(null, "Service over early", "Press “Service is over: stop the stream now” on the Now tab; the PC stops the stream within a minute and does steps 7 to 12 as usual.", ["Now tab"], "hand"),
           step(null, "Visiting minister", "A voice the PC does not know is entered as “Visiting Minister”; the name is fixed on AC Central afterwards.", ["AC Central"], "hand"),
           step(null, "Sign-in expired", "Vimeo signs in again through the church Google account by itself; if Google asks for a password, someone signs in once on the PC.", ["Vimeo"], "hand"),
@@ -2967,7 +3062,7 @@ async function demoLoad() {
         viewers: { video: { current: 1, peak: 4 }, audio: { current: 6, peak: 10 }, total: { current: 7, peak: 12 } } } } },
     { run_key: "2026-11-08_SunAM", run_date: "2026-11-08", service_id: "SunAM", service_name: "Sunday AM", steps: bad, summary: sum },
     { run_key: "2026-11-04_WedPM", run_date: "2026-11-04", service_id: "WedPM", service_name: "Wednesday Evening", steps: allOk(t(21, 17)), summary: { ...sum, speaker: "Adam Zeltwanger", readings: ["Exodus 27:1-21", "Revelation 21:1-7"] } }];
-  state.tests = []; state.requests = []; state.stops = []; state.pcSeen = new Date(Date.now() - 40e3);
+  state.tests = []; state.requests = []; state.stops = []; state.starts = []; state.pcSeen = new Date(Date.now() - 40e3);
   // &running=1: today's Sunday AM streaming now, to try "Service is over: stop the stream now" (2026-11-15)
   if (params.get("running") === "1") state.runs.unshift({ run_key: `${ymd(today)}_SunAM`, run_date: ymd(today), service_id: "SunAM", service_name: "Sunday AM",
     steps: allOk(t(9, 57)).map((s, i) => i < 5 ? s : { ...s, status: "pending", detail: "", at: null }), summary: {} });
@@ -3010,6 +3105,18 @@ async function demoLoad() {
                  { email: "someone@example.org", note: "Sound booth", is_admin: false, general: true, announcements: false, thoughts: false, added_at: "2026-11-09T16:00:00Z", added_by: "russ.koehl@morrisnorth.org" }];
   // a quick test plays itself, one step every 3 s
   state.demoTick = () => {
+    // a start request ("Start a service now", 2026-11-25): the "PC" picks it up on one tick, the service streams on the next
+    const sr = state.starts.find(x => x.status === "pending" || (x.status === "done" && !x.demoDone));
+    if (sr) {
+      if (sr.status === "pending") { sr.status = "done"; sr.note = `Start launched at ${fmtTime(new Date())}`; sr.run_key = `${ymd(new Date())}_Special`; sr.handled_at = new Date().toISOString(); return; }
+      sr.demoDone = true;
+      const now = new Date(), tt = (d) => d.toISOString();
+      const run = { run_key: sr.run_key, run_date: ymd(now), service_id: "Special", service_name: sr.title, summary: {},
+        steps: allOk(t(now.getHours(), now.getMinutes())).map((s, i) => i < 4 ? { ...s, at: tt(now) } : { ...s, status: "pending", detail: "", at: null }) };
+      run.steps[0].detail = `Started from the status page by ${sr.requested_by} at ${fmtTime(now)}; camera, Sanctuary mic and internet found.`;
+      state.runs = [run, ...state.runs.filter(r => r.run_key !== run.run_key)];
+      return;
+    }
     // a stop request: the "PC" picks it up on one tick, the stop step is done on the next
     const sq = state.stops.find(x => x.status === "pending" || (x.status === "done" && !x.demoDone));
     if (sq) { const r = state.runs.find(x => x.run_key === sq.run_key), st = r && r.steps.find(s => s.key === "stop");
@@ -3053,6 +3160,9 @@ function demoRpc(fn, a) {
   if (fn === "stream_request_stop") { if (!state.stops.some(x => x.run_key === a.p_run_key && x.status === "pending"))
       state.stops.unshift({ id: Date.now(), run_key: a.p_run_key, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString() }); return 1; }
   if (fn === "stream_cancel_request") { const q = state.requests.find(x => x.id === a.p_id); if (q) q.status = "cancelled"; return; }
+  if (fn === "stream_request_start") { if (!state.starts.some(x => x.status === "pending"))
+      state.starts.unshift({ id: Date.now(), title: a.p_title, service_type: a.p_type, stop_at: a.p_stop_at, publish: a.p_publish, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString() }); return 1; }
+  if (fn === "stream_cancel_start") { const q = state.starts.find(x => x.id === a.p_id && x.status === "pending"); if (q) { q.status = "failed"; q.note = "Cancelled by demo@example.org"; q.handled_at = new Date().toISOString(); } return; }
   if (fn === "stream_admin_add_user") { const e = a.p_email.toLowerCase(); const u = state.users.find(x => x.email === e);
     if (u) { u.note = a.p_note || u.note; u.is_admin = !!a.p_admin; } else state.users.push({ email: e, note: a.p_note, is_admin: !!a.p_admin, general: true, announcements: false, thoughts: false, added_at: new Date().toISOString(), added_by: "demo" }); return; }
   if (fn === "stream_set_hymn_rights") { return; }
