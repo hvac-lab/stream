@@ -767,15 +767,16 @@ function startControl() {
   }
   if (live) return null;   // one stream at a time: the Stop button is on the card
   if (state.askingStart) {
-    const f = state.startForm || (state.startForm = { title: "", type: "Funeral", stop: hhmm(roundUp5(new Date(Date.now() + 2 * 3600e3))), publish: true });
-    const title = el("input", { type: "text", placeholder: "e.g. Funeral of John Doe", value: f.title, oninput: (e) => { f.title = e.target.value; } });
+    // the stop time starts 90 minutes after the button was pressed (Russ, 2026-11-25); the name is optional
+    const f = state.startForm || (state.startForm = { title: "", type: "Funeral", stop: hhmm(roundUp5(new Date(Date.now() + 90 * 60e3))), publish: true });
+    const title = el("input", { type: "text", placeholder: "optional, e.g. Funeral of John Doe", value: f.title, oninput: (e) => { f.title = e.target.value; } });
     const type = el("select", { onchange: (e) => { f.type = e.target.value; } }, ...START_TYPES.map(([v, t]) => { const o = el("option", { value: v }, t); if (v === f.type) o.selected = true; return o; }));
     const stop = el("input", { type: "time", value: f.stop, step: "300", onchange: (e) => { f.stop = e.target.value; } });
     const opt = (v, title, text) => el("label", { class: "opt" + (f.publish === v ? " on" : "") },
       el("input", { type: "radio", name: "pub", checked: f.publish === v ? "checked" : null, onchange: () => { f.publish = v; render(); } }), el("div", {}, el("b", {}, title), el("span", {}, text)));
     const form = el("div", { class: "confirm start", style: "width:100%" }, el("p", { class: "sure" }, "Start a service now"),
       el("p", {}, "For a service that is not on the schedule, such as a funeral. Like a Wednesday evening: OBS and Rocket Broadcaster start, the video and the radio audio are live on AC Central for everyone within about a minute, the PC checks them 6 minutes in; the Sanctuary mixer is not touched."),
-      el("label", { class: "f" }, "Name of the service (AC Central title, Vimeo title)"), title,
+      el("label", { class: "f" }, "Name of the service (optional; AC Central title, Vimeo title - without one, the kind is used)"), title,
       el("label", { class: "f" }, "Kind (AC Central Service/Day)"), type,
       el("label", { class: "f" }, "Stop the stream at"), stop,
       el("p", { class: "hint", style: "margin:4px 0 10px" }, "The PC stops it at this time. To stop earlier, press “Service is over: stop the stream now” on the card below once it is running (or Stop Stream Now on the PC)."),
@@ -800,11 +801,12 @@ async function askStart(f) {
   let stopAt = atTime(now, f.stop || "00:00");
   if (stopAt < now) stopAt.setDate(stopAt.getDate() + 1);   // past midnight
   const minAhead = (stopAt - now) / 60e3;
-  if (!(f.title || "").trim()) { state.startMsg = "Give the service a name, e.g. Funeral of John Doe."; render(); return; }
+  // no name typed: the kind stands in ("Special service", "Funeral", ...; Russ, 2026-11-25: "put generic text")
+  const name = (f.title || "").trim() || (START_TYPES.find(t => t[0] === f.type) || [, "Special service"])[1].replace(/ or program| \(.*\)/, "");
   if (minAhead < 5) { state.startMsg = "The stop time must be at least 5 minutes from now."; render(); return; }
   if (minAhead > 8 * 60) { state.startMsg = "The stop time must be within 8 hours."; render(); return; }
   state.busy = true; state.startMsg = null; render();
-  try { await rpc("stream_request_start", { p_title: f.title.trim(), p_type: f.type, p_stop_at: stopAt.toISOString(), p_publish: !!f.publish }); await load(); state.askingStart = false; state.startForm = null; }
+  try { await rpc("stream_request_start", { p_title: name, p_type: f.type, p_stop_at: stopAt.toISOString(), p_publish: !!f.publish }); await load(); state.askingStart = false; state.startForm = null; }
   catch (e) { state.startMsg = "Could not ask for the start: " + (e.message || e); }
   state.busy = false; render();
 }
