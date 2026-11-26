@@ -954,8 +954,10 @@ function liveCard() {
     now = el("div", { class: "now" }, el("span", { class: "what" }, "Singing"),
       h && h.number ? `#${h.number} ${h.title || ""}` : el("span", { class: "off" }, "hymn not known yet"),
       h && h.hymnal ? el("span", { class: "sub" }, ` · ${bookName(h)}`) : null);
-  } else if (L.state === "speaking") {
-    now = el("div", { class: "now" }, el("span", { class: "what" }, "Speaking"),
+  } else if (L.state === "speaking" || L.state === "praying") {
+    // "praying" = the closing prayer after the last hymn (Russ, 2026-11-26: "During the 2nd prayer, show the person's
+    // who is praying name"); the voice is matched against the closing-prayer voiceprints by live.py
+    now = el("div", { class: "now" }, el("span", { class: "what" }, L.state === "praying" ? "Praying" : "Speaking"),
       L.speaker && L.speaker.known ? L.speaker.name : el("span", { class: "off" }, "a voice not on file"));
   } else if (L.state === "waiting") now = el("div", { class: "now off" }, "Waiting for the sound to start");
   else now = el("div", { class: "now off" }, "Quiet");
@@ -1067,6 +1069,9 @@ function liveDetails(L, V, ended) {
   if (mins.length) left.push(ended ? null : el("div", { class: "sub lbl" }, "Ministers:"),
     el("div", { class: "minlines" }, ...mins.map(m => el("div", {}, el("strong", {}, m.name), ` - ${Math.max(1, Math.round(m.sec / 60))} min`,
       ...reads.filter(x => x.who === m.name).map(x => el("div", { class: "minread" }, x.text))))));
+  // the closing prayer and who prayed it (live.py "prayer"; Russ, 2026-11-26), once it has started
+  if (L.prayer && L.prayer.from) left.push(el("div", { class: "sub", style: "margin-top:6px" }, el("span", { class: "lbl" }, "Closing prayer: "),
+    L.prayer.known && L.prayer.name ? el("strong", {}, L.prayer.name) : el("span", { class: "off" }, "a voice not on file"), ` (${L.prayer.from.slice(0, 5)})`));
   // readings no minister is matched to: below the ministers
   const rd = reads.filter(x => !x.who || !mins.some(m => m.name === x.who)).map(x => x.text);
   if (rd.length) left.push(el("div", { class: "readings" }, rd.join(" · ")));
@@ -3173,7 +3178,8 @@ async function demoLoad() {
       { time: "10:12", number: "159", title: "Self Sacrifice" }, { time: "11:08", number: "202", hymnal: "Zion's Harp", title: "Christ My All" }],
     speakers: [{ name: "Ben Furrer", from: "10:16:40", to: "10:20:10" }, { name: "UNKNOWN", from: "10:20:20", to: "10:21:00" }, { name: "Ben Furrer", from: "10:21:10", to: "10:30:00" },
       { name: "Damon Knobloch", from: "10:31:00", to: "11:06:50" }], lastAnnounced: { time: "11:07", number: 202, hymnal: "Zion's Harp", title: "Christ My All" },
-    readings: [{ book: "Psalms", chapter: 78, v0: 4, v1: 71, time: "10:37" }, { book: "John", chapter: 20, v0: 1, v1: 31, time: "10:57" }] } : null;
+    readings: [{ book: "Psalms", chapter: 78, v0: 4, v1: 71, time: "10:37" }, { book: "John", chapter: 20, v0: 1, v1: 31, time: "10:57" }],
+    prayer: { name: "Taylor Zeltwanger", score: 0.84, known: true, from: "11:09:40", to: "11:11:10" } } : null;
   state.watching = isRun ? { active: true, run_key: `${ymd(today)}_SunAM`, at: new Date(Date.now() - 20e3).toISOString(),
     video: { current: 14, peak: 17, plays: 31, at: new Date(Date.now() - 20e3).toISOString() }, audio: { current: 6, peak: 8, at: new Date(Date.now() - 20e3).toISOString() },
     total: { current: 20, peak: 24, at: new Date(Date.now() - 20e3).toISOString() } } : null;
