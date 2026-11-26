@@ -932,7 +932,8 @@ function liveCard() {
       el("div", { class: "sub livehead" },
         el("div", { id: "liveClock" }, fmtDateTimeS(new Date())),
         since ? el("div", { id: "liveDur", "data-since": since.toISOString(), title: `Streaming since ${fmtTime(since)}` }, fmtDuration(Date.now() - since)) : null,
-        el("div", {}, heard ? `heard ${fmtTime(heard)} · ${age < 90 ? Math.max(0, Math.round(age)) + " s ago" : ago(at)}` : ""))));
+        // "Updated 3:35 PM · 3 min ago" = the last news from the church PC (was "heard ..."; Russ, 2026-11-26)
+        el("div", {}, heard ? `Updated ${fmtTime(heard)} · ${age < 90 ? Math.max(0, Math.round(age)) + " s ago" : ago(at)}` : ""))));
   let now;
   if (age > 90) now = el("div", { class: "now off" }, "The church PC has not reported what it hears for a while.");
   else if (L.state === "singing") {
@@ -1084,7 +1085,7 @@ function liveDetails(L, V, ended) {
     el("div", { class: "livevideo", id: "liveVideoSlot", "data-src": L.video, "data-run": L.run_key || "" },
       demo && !params.get("video") ? el("span", {}, "Live video") : null),
     counts));
-  if (hy.length) out.push(ended ? null : el("div", { class: "sub lbl" }, "Hymns so far:"),
+  if (hy.length) out.push(ended ? null : el("div", { class: "sub lbl" }, "Hymns:"),   // was "Hymns so far:" (Russ, 2026-11-26)
     // under step 7 one column, oldest first, "Hymns of Zion - #291 - O For a Thousand Tongues" (Russ, 2026-11-19)
     ended ? el("div", { class: "hymnlist" }, ...hy.map(h => el("div", {}, [bookName(h), `#${h.number}`, h.title].filter(Boolean).join(" - "))))
       // the live card: one column too, with the time first (Russ, 2026-11-22: "12:22 - #432 Sound the Battle Cry, make
