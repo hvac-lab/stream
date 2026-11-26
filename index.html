@@ -931,7 +931,7 @@ function liveCard() {
     el("div", { class: "stepline" }, el("span", { class: "tag" }, "Live in church"),
       el("div", { class: "sub livehead" },
         el("div", { id: "liveClock" }, fmtDateTimeS(new Date())),
-        since ? el("div", { id: "liveDur", "data-since": since.toISOString(), title: `Streaming since ${fmtTime(since)}` }, fmtDuration(Date.now() - since)) : null,
+        since ? el("div", { title: `Streaming since ${fmtTime(since)}` }, "Duration: ", el("span", { id: "liveDur", "data-since": since.toISOString() }, fmtDuration(Date.now() - since))) : null,   // "Duration: 34:44" (Russ, 2026-11-26)
         // "Updated 3:35 PM · 3 min ago" = the last news from the church PC (was "heard ..."; Russ, 2026-11-26)
         el("div", {}, heard ? `Updated ${fmtTime(heard)} · ${age < 90 ? Math.max(0, Math.round(age)) + " s ago" : ago(at)}` : ""))));
   let now;
