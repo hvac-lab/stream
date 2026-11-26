@@ -1452,9 +1452,10 @@ function renderGreetings() {
 // ------------------------------------------------------------------ Thoughts (Russ, 2026-11-22: "create a quiz and deep
 // thought on what was read and preached ... list date, what Books and chapters and verses read both am pm. Then, expand
 // to show the questions. Then 3 general easy questions ... Then 4 harder questions, then 2 really hard questions, then 2
-// self reflecting questions. Everything has to come from the bible or what the minister said"). stream_thoughts, one row
-// per service day, written by the church PC (scripts\Update-Thoughts.ps1 -> analyze\thoughts.py; every question's quote
-// checked against the King James text / the transcript). Only people with "Thoughts" checked on the Admin tab see it.
+// self reflecting questions"; 2026-11-26: "all the questions strictly from the bible, don't include the minister or
+// anything outside. 100% from the Bible"). stream_thoughts, one row per service day, written by the church PC
+// (scripts\Update-Thoughts.ps1 -> analyze\thoughts.py; only the King James text of the chapters read goes to Claude, every
+// question's verse and quote checked against it). Only people with "Thoughts" checked on the Admin tab see it.
 const TH_LEVELS = [["easy", "Easy questions"], ["harder", "Harder questions"], ["hard", "Really hard questions"], ["reflect", "Self-reflection"]];
 async function loadThoughts() {
   if (demo) { state.th = demoThoughts(); return; }
@@ -1470,13 +1471,13 @@ function demoThoughts() {
              q("Whom did the people of Lystra call Jupiter?", "Barnabas.", "bible", "Acts 14:12", "", "And they called Barnabas, Jupiter; and Paul, Mercurius"),
              q("Who shut Noah in the ark?", "The LORD.", "bible", "Genesis 7:16", "", "as God had commanded him: and the LORD shut him in.")],
       harder: [q("How many cubits upward did the waters prevail?", "Fifteen cubits.", "bible", "Genesis 7:20", "", "Fifteen cubits upward did the waters prevail; and the mountains were covered."),
-               q("What new name did the minister suggest for the ark?", "The mercy ship.", "sermon", "", "AM", "it could be called like the mercy ship"),
+               q("From which two cities came the Jews who persuaded the people to stone Paul?", "Antioch and Iconium.", "bible", "Acts 14:19", "", "certain Jews from Antioch and Iconium, who persuaded the people, and, having stoned Paul"),
                q("If Paul yet pleased men, what would he not be?", "The servant of Christ.", "bible", "Galatians 1:10", "", "for if I yet pleased men, I should not be the servant of Christ."),
-               q("How long does the church in Turkey wait before baptizing new believers?", "About a year.", "sermon", "", "AM", "they actually wait upwards of about a year to baptize the new believers")],
-      hard: [q("Which gift of God, named by Paul at Lystra, did the minister tie back to Noah's day?", "Rain from heaven.", "sermon", "", "AM", "Do you think the people in Noah's time thought rain was a sign of God's mercy?"),
-             q("What did the minister say Peter called baptism?", "An appeal to our Savior for a clean conscience.", "sermon", "", "AM", "it's an appeal to our Savior for a clean conscience")],
-      reflect: [q("What is the next step of obedience God is asking of me today?", "", "sermon", "", "AM", "What is the next step of obedience as we write about Noah?"),
-                q("Where am I seeking to please men rather than serving Christ?", "", "sermon", "", "PM", "Seeking to please men, seeking to look good to man isn't what's pleasing")] } },
+               q("By how many was Noah to take every clean beast into the ark?", "By sevens, the male and his female.", "bible", "Genesis 7:2", "", "Of every clean beast thou shalt take to thee by sevens, the male and his female")],
+      hard: [q("What may a son of Aaron with a blemish still eat, though he may not come near the altar?", "The bread of his God, both of the most holy and of the holy.", "bible", "Leviticus 21:22", "", "He shall eat the bread of his God, both of the most holy, and of the holy."),
+             q("Through what did Paul and Barnabas say we must enter into the kingdom of God?", "Through much tribulation.", "bible", "Acts 14:22", "", "we must through much tribulation enter into the kingdom of God")],
+      reflect: [q("Paul and Barnabas rehearsed all that God had done with them. What has God done with me this year that I could tell the church?", "", "bible", "Acts 14:27", "", "they rehearsed all that God had done with them, and how he had opened the door of faith unto the Gentiles"),
+                q("Do I seek to please men or God in what I do this week?", "", "bible", "Galatians 1:10", "", "For do I now persuade men, or God? or do I seek to please men?")] } },
     { service_date: "2026-11-18", readings: [{ service: "Wednesday", ref: "Mark 4:1-41" }, { service: "Wednesday", ref: "Hebrews 10:19-39" }], questions: { easy: [], harder: [], hard: [], reflect: [] } }];
 }
 function renderThoughts() {
@@ -1520,7 +1521,7 @@ function renderThoughts() {
         tip: "What was read at the Sunday afternoon or the Wednesday evening service." },
       { key: "n", label: "Questions", val: r => r.n, num: true, cls: "ctr" },
     ], rows, { key: "date", dir: "desc" }, 200, { detail: r => questionsOf(r.row), open: state.thOpen, keyOf: r => r.d, tableCls: "thtable", detailTip: "Click to see the questions" }),
-    el("p", { class: "hint", style: "margin:10px 0 0" }, "Click a day to see its questions. Only from the Bible chapters read (King James) and what the ministers said; each question shows where its answer is.")));
+    el("p", { class: "hint", style: "margin:10px 0 0" }, "Click a day to see its questions. All of them come from the Bible chapters read that day (King James) and nothing else; each question shows the verse its answer is in.")));
 }
 // "Calendar changes" (Russ, 2026-11-22: "add a text box for lunch swaps, up and coming events to add to calendar, etc.
 // Button to prepare allow the user to view and edit, then confirm which will add/change/delete from the calendar").
@@ -2115,7 +2116,7 @@ function renderHistory() {
 // What the church PC does by itself, for showing others (Russ, 2026-11-10). KEEP IT CURRENT: when a step, a time,
 // a service (OBS, Rocket, Vimeo, Radio Mast, AC Central, sheet, report) or a hand-off changes, change it here too
 // and move MAP_UPDATED. The 12 steps are the ones the PC reports (Common.psm1 $MnSteps, the Now tab).
-const MAP_UPDATED = "2026-11-25";
+const MAP_UPDATED = "2026-11-26";
 // The flowchart (boxes, arrows, decisions), drawn as SVG in a 1100 x 720 frame: band 1 live stream, band 2 check and
 // stop, band 3 after the service. Coordinates are by hand; an arrow ends at the edge of the box it points to.
 function processSvg(K, svcs, t, short) {
@@ -2227,7 +2228,7 @@ function renderProcessMap() {
       phase("After", "about 30 to 40 minutes, no one needed",
         step(7, "Speaker, readings and hymns found", "The PC writes out every word of the service, recognizes the minister by voice, matches the readings to the King James Bible and picks up the announced hymns. Before the service the hymn numbers are looked up in the Tabernacle / Hymns of Zion book first, from the hymn right before the service (5 min before a minister is first heard) in Zion's Harp first; a hymnal named in the announcement wins.", ["Church PC only"]),
         step(null, "Announcements (Sundays)", "From the last minutes of the recording the PC sends only the words after the closing prayer to Claude, which lists the greetings from other churches (names and places from AC Central's church list) and the announcements. After the afternoon service the morning's and afternoon's are combined, each once, on the Announcements tab (with the weekly email, its calendar from the church Google Calendar, read every minute on Sunday afternoons, hourly otherwise); the greetings (Sundays and Wednesdays) on the Greetings tab, counted by church for a time frame, with a map of all our churches. Food for Thought is written by Claude after the afternoon service: one verse a minister used for his main point (King James text) and one sentence on that point; Prayer Requests are carried from the week before; both can be changed with Edit in the email. \"Create draft\" has the PC save the email as a Gmail draft in mnorthacc@gmail.com within a minute; a person adds the recipients and sends it. After the afternoon service, dated events in the announcements that are not on the church calendar yet are added to it automatically, and a phone text lists them (delete any that were misheard). After each Sunday service the PC also reads last week's sent email: its upcoming events go on the calendar and its prayer requests into this week's list (the announcements list itself stays what was said over the pulpit that day). \"Calendar changes\" on the tab's Changes sub tab: lunch swaps and coming events written in plain words; the PC lists the changes, a person checks and edits them and presses Confirm, then the PC changes the church calendar (repeating entries are changed in Google Calendar itself).", ["Claude API", "Google Calendar", "Gmail (mnorthacc)", "Announcements tab"]),
-        step(null, "Thoughts (questions on the day)", "After the last service of the day (Sunday afternoon, Wednesday evening) Claude writes 11 questions on what was read and preached: 3 easy, 4 harder, 2 really hard and 2 for self-reflection, only from the Bible chapters read (King James) and the ministers' own words. Every question carries the exact words its answer comes from; the PC checks them against the King James text and the transcript and drops any it cannot find. They show on the Thoughts tab, by date with the chapters read, only for people whose Thoughts box is checked on the Admin tab.", ["Claude API", "Thoughts tab"]),
+        step(null, "Thoughts (Bible questions on the day)", "After the last service of the day (Sunday afternoon, Wednesday evening) Claude writes 11 questions on the Bible chapters read that day: 3 easy, 4 harder, 2 really hard and 2 for self-reflection, 100% from the King James text of those chapters and nothing else (no sermon, no other source; only that text is sent). Every question names its verse and carries the exact words its answer comes from; the PC checks that the verse was read and the words are there, and drops any question that fails. They show on the Thoughts tab, by date with the chapters read, only for people whose Thoughts box is checked on the Admin tab.", ["Claude API", "Thoughts tab"]),
         step(8, "Recording trimmed", "Cuts the quiet time before and after the service. The originals are kept.", ["Church PC only"]),
         step(9, "Video uploaded to Vimeo", "Uploads the trimmed video, unlisted, to the Morris North folder.", ["Vimeo"]),
         step(10, "Sermon entry on AC Central", "Adds the sermon: date, service, minister, readings, the audio file and the video link.", ["AC Central"]),
@@ -2882,7 +2883,7 @@ function drawAdmin(box, rows, note) {
   const hasAcc = !demo ? rows.some(u => "general" in u) : true;
   const ROLES = [["admin", "Admin", "Also sees Process Map, Tests and Admin, and manages this list"],
     ...(hasAcc ? [["general", "General", "Now, History, Ministers, Bible, Viewers, Hymns, Copyright, Greetings"], ["announcements", "Announcements", "The Announcements tab and the weekly email"],
-      ["thoughts", "Thoughts", "The Thoughts tab (questions on what was read and preached)"]] : [])];
+      ["thoughts", "Thoughts", "The Thoughts tab (Bible questions on the chapters read)"]] : [])];
   const mineKey = { general: "general", announcements: "annOk", thoughts: "thoughts" };
   const has = (u, k) => !!(k === "admin" ? u.is_admin : u[k]);
   const nameOf = (u) => (u.note || u.email).toLowerCase();
