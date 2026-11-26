@@ -786,8 +786,9 @@ const START_TYPES = [["Funeral", "Funeral"], ["Wedding", "Wedding"], ["Special E
 const roundUp5 = (d) => { const r = new Date(d); r.setSeconds(0, 0); r.setMinutes(Math.ceil(r.getMinutes() / 5) * 5); return r; };
 const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 // the test stream (Tests tab "Test the live view", 2026-11-26): a TestSpecial run of today that is still streaming
-const testStream = () => state.tests.find(r => r.service_id === "TestSpecial" && r.run_date === ymd(new Date()) && overall(r).cls === "running") || null;
-const isTestStream = (run) => !!run && run.service_id === "TestSpecial";
+// ... or the live-card replay of a past service (TestLive, Test-LiveReplay.ps1): both get the red band on Now
+const testStream = () => state.tests.find(r => ["TestSpecial", "TestLive"].includes(r.service_id) && r.run_date === ymd(new Date()) && overall(r).cls === "running") || null;
+const isTestStream = (run) => !!run && ["TestSpecial", "TestLive"].includes(run.service_id);
 function startControl() {
   if (state.starts === null || state.starts === undefined) return null;   // table not set up yet (stream_status_13.sql)
   const today = ymd(new Date());
@@ -864,7 +865,7 @@ function runCard(run, title, opts = {}) {
   const card = el("section", { class: "card" + (run.is_test ? " test" : "") + (ts ? " teststream" : "") }, el("h2", {}, title),
     el("div", { class: "runhead" },
       el("div", {}, el("h3", {}, run.service_name),
-        el("div", { class: "when" }, ts ? `Test stream on ${fmtDay(day)} · nothing is published` : run.is_test ? `Test run on ${fmtDay(day)}` : fmtDay(day) + (svc ? ` · ${fmtTime(atTime(day, svc.start))} to ${fmtTime(atTime(day, svc.cutoff))}` : ""))),
+        el("div", { class: "when" }, run.service_id === "TestLive" ? `Replay on ${fmtDay(day)} · nothing streams` : ts ? `Test stream on ${fmtDay(day)} · nothing is published` : run.is_test ? `Test run on ${fmtDay(day)}` : fmtDay(day) + (svc ? ` · ${fmtTime(atTime(day, svc.start))} to ${fmtTime(atTime(day, svc.cutoff))}` : ""))),
       el("span", { class: "badge " + o.cls }, o.text)),
     opts.detail ? runDetail(run) : topBox(run), opts.detail ? null : stepList(run));
   if (!run.is_test || ts) {
@@ -940,8 +941,9 @@ function liveCard() {
   const run = state.runs.find(r => r.run_key === L.run_key);
   const startStep = run ? stepOf(run, "start") : {};
   const since = L.since ? new Date(L.since) : startStep.at ? new Date(startStep.at) : null;
-  const card = el("section", { class: "card live" + (/_TestSpecial$/.test(L.run_key || "") ? " teststream" : "") },
-    el("div", { class: "stepline" }, el("span", { class: "tag" }, /_TestSpecial$/.test(L.run_key || "") ? "Live in church · TEST" : "Live in church"),
+  const isT = /_Test(Special|Live)$/.test(L.run_key || "");   // the test stream or the live-card replay (2026-11-26)
+  const card = el("section", { class: "card live" + (isT ? " teststream" : "") },
+    el("div", { class: "stepline" }, el("span", { class: "tag" }, isT ? (L.replayOf ? "Live in church · TEST REPLAY" : "Live in church · TEST") : "Live in church"),
       el("div", { class: "sub livehead" },
         el("div", { id: "liveClock" }, fmtDateTimeS(new Date())),
         since ? el("div", { title: `Streaming since ${fmtTime(since)}` }, "Duration: ", el("span", { id: "liveDur", "data-since": since.toISOString() }, fmtDuration(Date.now() - since))) : null,   // "Duration: 34:44" (Russ, 2026-11-26)
@@ -1177,7 +1179,9 @@ function renderNow() {
   else kids.push(el("section", { class: "card" }, el("h2", {}, "Latest service"), el("p", { class: "hint" }, "No service has reported yet.")));
   const mx = mixerCard();
   if (mx) kids.push(mx);
-  if (ts) kids.unshift(el("div", { class: "banner testtop" }, "TEST STREAM · not a service",
+  if (ts && ts.service_id === "TestLive") kids.unshift(el("div", { class: "banner testtop" }, "TEST REPLAY · a past service played back, not live",
+    el("span", {}, `${(state.live && state.live.replayOf) || ts.service_name.replace(/^TEST: live card replay of /, "")}, replayed from the recording by ${(state.requests.find(q => q.test_key === ts.run_key) || {}).requested_by || "an admin"}. Nothing streams, is uploaded, entered, added to the sheet or reported.`)));
+  else if (ts) kids.unshift(el("div", { class: "banner testtop" }, "TEST STREAM · not a service",
     el("span", {}, `Started from the Tests tab by ${((state.starts || []).find(q => q.run_key === ts.run_key) || {}).requested_by || "an admin"}. Nothing is uploaded to Vimeo, entered on AC Central, added to the sheet or reported.`)));
   const liveTest = state.tests.find(r => r !== ts && overall(r).cls === "running");
   if (liveTest && state.admin) kids.unshift(el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, "A test is running: "), liveTest.service_name + ". ",
@@ -2381,6 +2385,31 @@ function renderTests() {
       else if (tsReq && tsReq.status === "failed" && Date.now() - new Date(tsReq.handled_at || tsReq.requested_at) < 3600e3) card.append(el("div", { class: "msg bad" }, `Last test stream request: ${tsReq.note || "not carried out"}`));
       form.push(card);
     }
+    // Replay a past service on the live card (Russ, 2026-11-26: "same as the one we just added, but it is of a sermon
+    // that just happened, start 20 mins in, so I don't want blank pulpit"): stream_request_test_live -> Test-LiveReplay.ps1;
+    // the recording plays through the live listener at the pace of the clock, shown on Now under the red band
+    {
+      const sources = state.runs.filter(r => (r.steps || []).some(s => s.key === "record" && s.status === "ok"));
+      const f = state.replayForm || (state.replayForm = { key: null, minIn: 20, mins: 15 });
+      if (!f.key || !sources.some(r => r.run_key === f.key)) f.key = sources[0]?.run_key || null;
+      const sel = el("select", { onchange: (e) => { f.key = e.target.value; } },
+        ...sources.map(r => { const o = el("option", { value: r.run_key }, `${r.service_name}, ${fmtShortDay(parseYmd(r.run_date))}${r.summary?.speaker ? " · " + r.summary.speaker : ""}`); if (r.run_key === f.key) o.selected = true; return o; }));
+      const minIn = el("input", { type: "number", min: "0", max: "180", step: "5", value: f.minIn, style: "width:5em", onchange: (e) => { f.minIn = Math.max(0, Math.min(180, parseInt(e.target.value, 10) || 0)); } });
+      const mins = el("input", { type: "number", min: "3", max: "60", step: "1", value: f.mins, style: "width:5em", onchange: (e) => { f.mins = Math.max(3, Math.min(60, parseInt(e.target.value, 10) || 15)); } });
+      const go = el("button", { class: "big primary", disabled: !!live || !sources.length || state.busy, onclick: async () => {
+        state.busy = true; state.testMsg = null; render();
+        try { await rpc("stream_request_test_live", { p_source_key: f.key, p_minutes_in: f.minIn, p_minutes: f.mins }); await load(); state.testMsg = { ok: true, replay: true, text: "Asked. The church PC starts the replay within a minute; watch it on the Now tab under the red TEST band." }; }
+        catch (e) { state.testMsg = { ok: false, replay: true, text: "Could not start: " + (e.message || e) }; }
+        state.busy = false; render(); refresh();
+      } }, live ? "A test is already waiting or running" : "Start the replay");
+      form.push(el("section", { class: "card" }, el("h2", {}, "Replay a past service on the live card"),
+        el("div", { class: "testform" },
+          el("p", { style: "margin:0" }, "The recording of a past service plays through the live listener at the pace of the clock, so the Now tab's live card shows a real sermon the way it does during a service: the minister by voice, the hymns, the readings, the closing prayer. Nothing streams and OBS stays closed; there is no video, and the viewer counts stay empty."),
+          el("div", {}, el("div", { class: "hint", style: "margin-bottom:4px" }, "Service"), sel),
+          el("div", { class: "row", style: "align-items:center;gap:10px;flex-wrap:wrap" }, el("span", {}, "Start "), minIn, el("span", {}, " minutes into the service, play "), mins, el("span", {}, " minutes")),
+          el("div", { class: "hint" }, "20 minutes in, the minister is usually preaching. Shows on the Now tab with a red TEST band; listed here under Tests afterwards. Nothing is published or logged."),
+          go, state.testMsg && state.testMsg.replay ? el("div", { class: "msg " + (state.testMsg.ok ? "ok" : "bad") }, state.testMsg.text) : null)));
+    }
     form.push(el("section", { class: "card" }, el("h2", {}, "Systems check"),
       el("div", { class: "testform" },
         el("p", { style: "margin:0" }, "The church PC checks itself in about 2 minutes: the scheduled tasks and whether they fire for the ", el("b", {}, "next service"),
@@ -2397,7 +2426,8 @@ function renderTests() {
   }
   if (live) {
     const src = state.runs.find(r => r.run_key === live.source_key);
-    const what = live.mode === "system" ? "Systems check of the church PC" : `${live.mode === "full" ? "Full" : "Quick"} test of ${src ? src.service_name + ", " + fmtShortDay(parseYmd(src.run_date)) : live.source_key}`;
+    const srcName = src ? src.service_name + ", " + fmtShortDay(parseYmd(src.run_date)) : live.source_key;
+    const what = live.mode === "system" ? "Systems check of the church PC" : live.mode === "live" ? `Live card replay of ${srcName} (from ${live.minutes_in ?? 20} min in, ${live.minutes ?? 15} min; watch it on the Now tab)` : `${live.mode === "full" ? "Full" : "Quick"} test of ${srcName}`;
     const box = el("div", { class: "banner info", style: "margin:0 0 16px" }, el("b", {}, live.status === "pending" ? "Waiting for the church PC: " : "Running: "), what,
       ` (asked by ${live.requested_by} ${ago(new Date(live.requested_at))}). `, live.note ? live.note + " " : "",
       live.status === "pending" && !live.note ? "The PC checks every minute. " : "");
@@ -2417,7 +2447,7 @@ function renderTests() {
     const t = el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Asked"), el("th", {}, "Test"), el("th", {}, "By"), el("th", {}, "Result"))));
     const b = el("tbody");
     for (const q of done) b.append(el("tr", {}, el("td", { class: "date" }, fmtShortDay(new Date(q.requested_at)) + " " + fmtTime(new Date(q.requested_at))),
-      el("td", {}, q.mode === "system" ? "systems check" : `${q.mode} · ${q.source_key}`), el("td", {}, q.requested_by), el("td", {}, `${q.status}${q.note ? ": " + q.note : ""}`)));
+      el("td", {}, q.mode === "system" ? "systems check" : q.mode === "live" ? `live card replay · ${q.source_key}` : `${q.mode} · ${q.source_key}`), el("td", {}, q.requested_by), el("td", {}, `${q.status}${q.note ? ": " + q.note : ""}`)));
     t.append(b); kids.push(el("section", { class: "card" }, el("h2", {}, "Test requests"), el("div", { class: "tablewrap" }, t)));
   }
   screen(...kids);
@@ -3229,6 +3259,23 @@ async function demoLoad() {
       return; }
     const q = state.requests.find(x => x.status === "pending" || x.status === "running"); if (!q) return;
     let tr = state.tests.find(x => x.run_key === q.test_key);
+    if (q.mode === "live") {   // the live-card replay (Test-LiveReplay.ps1): 3 steps, the live card fed with a sermon
+      const src = state.runs.find(r => r.run_key === q.source_key), now = new Date(), tt = (d) => d.toISOString();
+      if (!tr) { tr = { run_key: q.test_key, run_date: ymd(now), service_id: "TestLive", service_name: `TEST: live card replay of ${src ? src.service_name : q.source_key} of Nov 8`, is_test: true,
+          steps: [["start", "Recording found"], ["live", "Live card replay"], ["report", "Replay finished"]].map(([key, label]) => ({ key, label, status: "pending", detail: "", at: null })), summary: {} };
+        state.tests.unshift(tr); q.status = "running"; tr.demoTicks = 0; return; }
+      tr.demoTicks = (tr.demoTicks || 0) + 1;
+      const [s0, s1, s2] = tr.steps;
+      if (tr.demoTicks === 1) { Object.assign(s0, { status: "ok", detail: `Replaying 2026-11-08_12-13-02-sermonAudio.mp3: ${src ? src.service_name : "the service"} of Nov 8 from 12:33 PM (20 min in) to 12:48 PM, at the pace of the clock.`, at: tt(now) });
+        Object.assign(s1, { status: "running", detail: "Starting the live listener...", at: tt(now) });
+        state.live = { active: true, test: true, run_key: tr.run_key, replayOf: `${src ? src.service_name : "Sunday PM"} of Nov 8, from 12:33 PM (20 min in)`, at: tt(now), audioAt: tt(now), since: tt(now), state: "speaking",
+          speaker: { name: "Doug Moser", score: 0.81, known: true }, hymns: [{ time: "12:18", number: "220", hymnal: "Hymns of Zion", title: "Holy Spirit, Faithful Guide" }],
+          speakers: [{ name: "Doug Moser", from: "12:30:10", to: "12:33:20" }], readings: [{ book: "Psalms", chapter: 122, v0: 1, v1: 9, time: "12:31" }] }; return; }
+      if (tr.demoTicks < 12) { state.live.at = tt(now); state.live.audioAt = tt(now); state.live.speakers[0].to = now.toTimeString().slice(0, 8); s1.detail = `Replaying: at ${fmtTime(now)} the live card shows: speaking: Doug Moser.`; return; }
+      Object.assign(s1, { status: "ok", detail: "Replayed 12:33 PM-12:48 PM of Nov 8 (90 readings): 12:33 speaking: Doug Moser. Hymns heard: none.", at: tt(now) });
+      Object.assign(s2, { status: "ok", detail: `Replay finished at ${fmtTime(now)}. Nothing was streamed, published or logged.`, at: tt(now) });
+      state.live = { ...state.live, active: false, state: "ended" }; q.status = "done"; q.note = "Live card replay finished (90 readings)."; return;
+    }
     if (q.mode === "system") {   // the systems check (Test-System.ps1): its own 13 steps, all fine in the demo
       const SYS = [["tasks", "Scheduled tasks registered", "All 4 tasks are registered and enabled (Start, Check, Stop, Requests)."], ["nextservice", "Next service: start, check and stop are scheduled", "Next service: Sunday AM on Sunday, November 29 (9:57 AM start, 10:03 AM check, 11:25 AM cutoff). Start, Check and Stop all fire at those times."],
         ["watcher", "Status page watcher running every minute", "The Requests task runs every minute (last 0.4 min ago, result OK)."], ["programs", "OBS, Rocket Broadcaster, Node, Python and ffmpeg found", "All found. OBS WebSocket on port 4455."],
@@ -3258,6 +3305,8 @@ async function demoLoad() {
 }
 function demoRpc(fn, a) {
   if (fn === "stream_set_manual") { if (a.p_manual) state.control.set(a.p_run_key, { run_key: a.p_run_key, note: a.p_note, set_by: "demo@example.org", set_at: new Date().toISOString() }); else state.control.delete(a.p_run_key); return; }
+  if (fn === "stream_request_test_live") { if (state.requests.some(q => q.status === "pending" || q.status === "running")) throw new Error("A test is already waiting or running");
+    state.requests.unshift({ id: Date.now(), source_key: a.p_source_key, mode: "live", minutes_in: a.p_minutes_in, minutes: a.p_minutes, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString(), test_key: `${ymd(new Date())}_TestLive` }); return 1; }
   if (fn === "stream_request_test") { if (state.requests.some(q => q.status === "pending" || q.status === "running")) throw new Error("A test is already waiting or running");
     state.requests.unshift({ id: Date.now(), source_key: a.p_source_key, mode: a.p_mode, status: "pending", requested_by: "demo@example.org", requested_at: new Date().toISOString(), test_key: a.p_mode === "system" ? `${ymd(new Date())}_TestSystem` : `${ymd(new Date())}_Test${a.p_source_key.slice(11)}` }); return 1; }
   if (fn === "stream_request_stop") { if (!state.stops.some(x => x.run_key === a.p_run_key && x.status === "pending"))
