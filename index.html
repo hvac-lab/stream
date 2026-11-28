@@ -547,13 +547,16 @@ function overall(run) {
   if (has("running")) return { cls: "running", text: "In progress" };
   if (has("failed")) return { cls: "failed", text: "Failed" };
   const started = st.some(x => x !== "pending");
-  const finished = stepOf(run, "report").status === "ok" || st.every(x => x !== "pending");
+  // a settled report step (ok, or skipped: the test stream, a run finished by hand) ends the run even when an
+  // earlier step was never reached (2026-11-27: a test stream stopped before the 6-min health check stayed "In progress")
+  const finished = ["ok", "skipped"].includes(stepOf(run, "report").status) || st.every(x => x !== "pending");
   if (started && !finished) {
     if (run.is_test) return { cls: "running", text: "In progress" };
     const svc = serviceOf(run.service_id); const day = parseYmd(run.run_date);
     const late = svc ? atTime(day, svc.cutoff).getTime() + 3 * 3600e3 : day.getTime() + 30 * 3600e3;
     return Date.now() < late ? { cls: "running", text: "In progress" } : { cls: "warning", text: "Not finished" };
   }
+  if (run.service_id === "TestSpecial") return has("warning") ? { cls: "warning", text: "Test done, with warnings" } : { cls: "ok", text: "Test done" };   // its publish steps are always skipped
   if (has("skipped")) return { cls: "skipped", text: "Partly by hand" };
   if (has("warning")) return { cls: "warning", text: "Done, with warnings" };
   return { cls: "ok", text: "Successful" };
